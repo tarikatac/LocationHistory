@@ -1,25 +1,35 @@
 const path = require("path");
-const NodePolyfillPlugin = require("node-polyfill-webpack-plugin")
+const NodePolyfillPlugin = require("node-polyfill-webpack-plugin");
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 
 module.exports = {
-   mode: "development",
-   entry: path.resolve(__dirname,"main.js"),
-   output: {
-     path: path.resolve(__dirname), 
-     filename: "index.js" 
-   },
+  mode: "development",
+  entry: [
+    "./src/js/app.js", "./src/scss/app.scss"
+  ],
+  output: {
+    path: path.resolve(__dirname, "dist/js"),
+    filename: "index.js"
+  },
   module: {
     rules: [
       {
-        test: /\.css$/,
-        use: [ { loader: "style-loader" }, { loader: "css-loader" } ],
+        test: /\.scss$/,
+        use: [
+          MiniCssExtractPlugin.loader,
+          'css-loader',
+          'sass-loader'
+        ]
       },
     ]
   },
   devServer: {
-    static: "./"
-  },    
+    static: {
+      directory: path.resolve(__dirname, './dist'),
+    }
+  },
   plugins: [
-        new NodePolyfillPlugin({ excludeAliases: ['console'] })
-    ]
+    new NodePolyfillPlugin({ excludeAliases: ['console'] }),
+    new MiniCssExtractPlugin({ filename: '../css/app.css'})
+  ]
 };
