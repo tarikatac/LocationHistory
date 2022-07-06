@@ -4,7 +4,7 @@
 <head>
 	<meta charset="utf-8">
 	<title>Location History </title>
-	
+
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css"
 		integrity="sha512-hoalWLoI8r4UszCkZ5kL8vayOGVae1oxXe/2A4AO6J9+580uKHDO3JdHb7NzwwzK5xr/Fs0W40kiNHxM9vyTtQ=="
 		crossorigin="" />
@@ -12,37 +12,44 @@
 		integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
 		crossorigin=""></script>
 
-	<link rel="stylesheet" href="css/app.css">
+	
+    <!-- Materialize css (css is included in app.css) -->
+    <!--<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+            
 	<script defer src="index.js"></script>
 
 </head>
 
 <body>
-	<div id="message"></div>
-	<div id="front_page">
+	<header></header>
 
-		<input type="text" id="webid" placeholder="Enter your webID">
-		<button id="webid_Login">Login</button>
-		<button id="start_posting" class="hidden">Post Location History</button>
-	</div>
+	<main class="row">
+		<section id="login" class="over-screen">
+			<div id="login-box" class="center-align">
+				<h4>Login with webID</h4>
+				<p>Log in using your webid! e.g. https://data.knows.idlab.ugent.be/person/SindhuVasireddy/#me</p>
+				<input type="text" id="webid" class="" placeholder="Enter your webID">
+				<button id="webid-login" class="waves-effect waves-light btn">Login</button>
+				<p id="login-message" class="error-msg"></p>
+			</div>
+		</section>
 
-	<div id="output">
-	</div>
+		<aside id="sidebar" class="col s2">
+			<div class="center-align">
+				<button id="start-posting" class="waves-effect waves-light btn green darken-2">Post Location History</button>
+			</div>
 
-	<button id="req_frnd" class="hidden">Request Friend's Location!</button>
-	<input type="text" id="friend_webid" placeholder="Enter your friend's webid to request their location!"
-		class="hidden">
-	<button id="request" class="hidden">Request</button>
+		</aside>
 
-	<div id="approve_revoke">
-	</div>
+		<section class="col s10">
+			<div id="map"></div>
+		</section>
 
-	<div id="map" class="hidden"></div>
-	<p id="status"></p>
-	<a id="map-link" target="_blank"><br /></a>
-	<br><br>
-	<button id="stop" class="hidden">Stop your location capture</button>
-	<button id="start" class="hidden">Start your location capture</button>
+
+	</main>
+	
+
 </body>
 
 </html>
