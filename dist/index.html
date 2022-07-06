@@ -12,7 +12,9 @@
 		integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
 		crossorigin=""></script>
 
-	
+	<!-- icons -->
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
     <!-- Materialize css (css is included in app.css) -->
     <!--<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"> -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
@@ -24,25 +26,80 @@
 <body>
 	<header></header>
 
-	<main class="row">
+	<!-- <div id="output">
+	</div>
+
+	
+	<button id="request" class="hidden">Request</button>
+
+	<div id="approve_revoke">
+	</div>
+
+	<p id = "status"></p> -->
+
+
+	<main>
 		<section id="login" class="over-screen">
 			<div id="login-box" class="center-align">
 				<h4>Login with webID</h4>
 				<p>Log in using your webid! e.g. https://data.knows.idlab.ugent.be/person/SindhuVasireddy/#me</p>
 				<input type="text" id="webid" class="" placeholder="Enter your webID">
 				<button id="webid-login" class="waves-effect waves-light btn">Login</button>
-				<p id="login-message" class="error-msg"></p>
+				<p id="login-message" class="invisible error-msg">error</p>
 			</div>
 		</section>
 
-		<aside id="sidebar" class="col s2">
-			<div class="center-align">
-				<button id="start-posting" class="waves-effect waves-light btn green darken-2">Post Location History</button>
+		<aside id="sidebar">
+			<div id="requests" class="sidebar-item">
+				<ul class="collection">
+					<!-- <li id="req_webid" class="collection-item">
+						<div>
+							webid
+							<div class="secondary-content">
+								<button class="waves-effect waves-light btn-small btn-symbol green darken-2">
+									<span class="material-symbols-outlined">
+										done
+									</span>
+								</button>
+							</div>
+						</div>
+						<div class="progress">
+							<div class="indeterminate"></div>
+						</div>
+					</li> -->
+				</ul>
 			</div>
-
+			<div id="friends" class="sidebar-item">
+				<div class="center-align">
+					<input type="text" id="friend-webid" class="" placeholder="webID">
+					<button id="req-frnd" class="waves-effect waves-light btn green darken-2">Request Friend's Location!</button>
+					<p id="req-message" class="invisible error-msg">error</p>
+				</div>
+				<ul id="friends-list" class="collection">
+					<!-- <li id="triple object" class="collection-item avatar">
+						<i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
+						<span class="title">Name</span>
+      					<p>Location not shared</p>
+						<div class="secondary-content collection-checkbox">
+							<label>
+								<input type="checkbox" class="filled-in" checked="checked" />
+								<span></span>
+							</label>
+						</div>
+					</li> -->
+				</ul>
+			</div>
+			<div id="post-location-item" class="sidebar-item">
+				<div class="center-align">
+					<button id="start-posting" class="waves-effect waves-light btn green darken-2">Post Location History</button>
+				</div>
+				<div id="posted-locations" class="collection">
+					<!-- <a href="#!" class="collection-item">test</a> -->
+				</div>
+			</div>
 		</aside>
 
-		<section class="col s10">
+		<section id="map-section">
 			<div id="map"></div>
 		</section>
 

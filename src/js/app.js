@@ -6,6 +6,7 @@ import {
 } from "@inrupt/solid-client-authn-browser";
 import { fetch as solidfetch } from "@inrupt/solid-client-authn-browser";
 import "leaflet";
+import { LineUtil } from "leaflet";
 
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
@@ -16,13 +17,13 @@ let container;
 let pod_url;
 
 let posting_loc = false;
-let login_button, login_message, post_location_button;
+let login_button, post_location_button, req_frnd_button;
 
 async function init() {
     // initialize variables for DOM objects
     login_button = document.getElementById('webid-login');
-    login_message = document.getElementById('login-message');
     post_location_button = document.getElementById('start-posting');
+    req_frnd_button = document.getElementById('req-frnd');
 
     
 
@@ -41,7 +42,7 @@ async function addEventListeners() {
             await Login(oidcIssuer);
         }
         catch (error) {
-            login_message.textContent = "OIDC Issuer not found in webid or invalid webID.";
+            setLoginMessage("OIDC Issuer not found in webid or invalid webID.");
         }
     });
 
@@ -49,13 +50,15 @@ async function addEventListeners() {
         // TODO: if user is logged in check
         if(!posting_loc) {
             posting_loc = true;
+
             await GetCoordinates();
+
+            //TODO: atm you need to start posting location to be able to recieve requests, maybe change this
             await fetchLocations();
             
             post_location_button.textContent = "Stop posting loc";
             post_location_button.classList.remove('green');
             post_location_button.classList.add('red');
-            document.getElementById('req_frnd').classList.remove('hidden');
         } else {
             posting_loc = false;
             navigator.geolocation.clearWatch(locator);
@@ -66,10 +69,142 @@ async function addEventListeners() {
         
     });
 
+    req_frnd_button.addEventListener('click', async () => {
+        let webid_frnd = document.getElementById('friend-webid').value;
+        let podUrl_frnd = await getStorageFromWebID(webid_frnd);
+        const file = `${podUrl_frnd}public/YourLocationHistory/inbox.ttl`;
+        await sendNotifications(file);
+    });
+
+}
+
+async function addRequestNotification(webid) {
+    let requests_list = document.querySelector('#requests>.collection');
+    let li = document.createElement('li');
+    li.className = "collection-item";
+    li.id = "req_" + webid;
+    li.innerHTML = `
+    <div>
+    ${webid}
+        <div class="secondary-content">
+            <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
+                <span class="material-symbols-outlined">
+                    done
+                </span>
+            </button>
+        </div>
+    </div>
+    `;
+
+    let approve_button = li.querySelector("div>div>button");
+
+    approve_button.addEventListener('click', async (event) => {
+        if(event.target.classList.contains("green")) {
+            event.target.classList.add("hidden");
+
+            //loading bar
+            let div = document.createElement("div");
+            div.classList.add("progress");
+            div.innerHTML = '<div class="indeterminate"></div>';
+            event.target.parentElement.parentElement.parentElement.appendChild(div);
+
+            await approvedSentNotification(rqstr_webid);
+            await addRequestingPersontoACL(rqstr_webid);
+        } 
+        else {
+            // event.target.classList.add('green');
+            // event.target.classList.remove('red');
+            // event.target.firstChild.textContent = "done";
+        }
+    });
+
+    requests_list.appendChild(li);
+
+    
+
+    // document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="${element.get('o').value}" >Approve ${element.get('o').value}</button>`;
+    // document.getElementById(rqstr_webid).addEventListener('click', async () => {
+    //     await approvedSentNotification(rqstr_webid);
+    //     await addRequestingPersontoACL(rqstr_webid);
+    // });
+}
+
+async function updateRequestNotification(webid) {
+    let li = document.getElementById("req_" + webid);
+
+    if(li) {
+        // remove loading bar
+        li.querySelector(".progress").remove();
+
+        // add X button
+        // <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
+        //             <span class="material-symbols-outlined">
+        //                 done
+        //             </span>
+        //         </button>
+        let approve_button = li.querySelector("div>div>button");
+        approve_button.classList.add('red');
+        approve_button.classList.remove('green');
+        approve_button.firstChild.textContent = "close";
+        approve_button.classList.remove("hidden");
+    }
+
+
+    // if (document.getElementById(`r_${element.get('o').value}`) == null) {
+    //     document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="r_${element.get('o').value}" >Revoke ${element.get('o').value}</button>`;
+    //     document.getElementById(`r_${element.get('o').value}`).addEventListener('click', async () => { await revokingPersonAccessfromACL(element.get('o').value); await removeAccessNotification(element.get('o').value) });
+    // }
+}
+
+//TODO: in future pass something like a user object that has webid & more info like name and pic
+async function addFriendsCard(webid) {
+    let friends_list = document.getElementById('friends-list');
+    let li = document.createElement('li');
+    li.id = webid;
+    li.className = "collection-item avatar";
+    li.innerHTML =`
+        <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
+        <span class="title">${webid}</span>
+        <p>Location not shared</p>
+        <div class="secondary-content collection-checkbox">
+            <label>
+                <input type="checkbox" class="filled-in" checked="" />
+                <span></span>
+            </label>
+        </div>
+    `;
+
+    let checkbox = li.querySelector("div>label>input");
+    checkbox.addEventListener('click', async () => {
+
+    });
+
+}
+
+async function setLoginMessage(text) {
+    let login_message = document.getElementById('login-message');
+    login_message.textContent = text;
+    login_message.classList.remove("invisible");
+}
+
+async function setReqMessage(text) {
+    let req_message = document.getElementById('req-message');
+    req_message.textContent = text;
+    req_message.classList.remove("invisible");
 }
 
 async function hideLoginScreen() {
     document.getElementById('login').classList.add('hidden');
+}
+
+// TODO: make the link move this map to the location & clean up look
+async function addPostedLocationHistory(lat, long, timestamp) {
+    let collection = document.getElementById('posted-locations');
+    let a = document.createElement('a');
+    a.href = "https://www.openstreetmap.org/#map=18/" + lat + "/" + long;
+    a.textContent = " Latitude:" + lat + "°, Longitude:" + long + "°,Timestamp:" + timestamp;
+    a.classList.add("collection-item");
+    collection.appendChild(a);
 }
 
 async function initMap() {
@@ -110,7 +245,7 @@ async function handleRedirectAfterLogin() {
     await handleIncomingRedirect();
     if (getDefaultSession().info.isLoggedIn) {
         await hideLoginScreen();
-        document.getElementById('output').textContent = "Session logged in!";
+        // document.getElementById('output').textContent = "Session logged in!";
         await settingContainer();
         await createInbox();
         await giveAccessoftheContainertoOwner();
@@ -174,29 +309,7 @@ async function getDataFromWebID(webid) {
     }
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Execute the following on the following button clicks!
 
-
-document.getElementById('req_frnd').addEventListener('click', () => {
-    document.getElementById('friend_webid').classList.remove("hidden");
-    document.getElementById('request').classList.remove("hidden");
-    document.getElementById('req_frnd').classList.add("hidden")
-});
-document.getElementById('request').addEventListener('click', async () => {
-    let webid_frnd = document.getElementById('friend_webid').value;
-    document.getElementById('friend_webid').classList.add("hidden");
-    document.getElementById('request').classList.add("hidden");
-    document.getElementById('req_frnd').classList.remove("hidden");
-    let podUrl_frnd = await getStorageFromWebID(webid_frnd);
-    const file = `${podUrl_frnd}public/YourLocationHistory/inbox.ttl`;
-    await sendNotifications(file);
-});
-//---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-document.querySelector('#start').addEventListener('click', () => {
-    GetCoordinates();
-    document.getElementById('stop').classList.remove('hidden');
-    document.getElementById('start').classList.add('hidden');
-});
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function settingContainer() {
     switch (Object.keys(window.sessionStorage)[0]) {
@@ -261,6 +374,7 @@ async function sendNotifications(file_frnd) {
         body: query
     });
     if (300 < response.status && response.status < 600) {
+        setReqMessage("Your friend may not have used our app yet!");
         console.log(` Error code is ${response.status} Your friend may not have used our app yet!`);
     }
 }
@@ -281,8 +395,7 @@ async function sendRequestAcceptedNotification(rqstr_webid) {
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 let response_data;
 async function addRequestingPersontoACL(webid_rqstr) {
-    var element = document.getElementById(webid_rqstr);
-    element.parentNode.removeChild(element);
+
     const query_extra = `:Read
         a acl:Authorization;
         acl:accessTo D:;
@@ -320,14 +433,14 @@ async function getRequestNotifications() {
     myEngine_getNots.invalidateHttpCache();
     const bindings = await bindingsStream.toArray();
     bindings.forEach(element => {
-        if (document.getElementById(element.get('o').value) == null) {
-            document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="${element.get('o').value}" >Approve ${element.get('o').value}</button>`;
-            rqstr_webid_array.push(element.get('o').value)
+        let rqstr_webid = element.get('o').value;
+        if (document.getElementById("req_" + rqstr_webid) == null) {
+
+            addRequestNotification(rqstr_webid);            
+
+            rqstr_webid_array.push(rqstr_webid)
         }
-        document.getElementById(element.get('o').value).addEventListener('click', async () => {
-            await approvedSentNotification(element.get('o').value);
-            await addRequestingPersontoACL(element.get('o').value);
-        });
+        
     });
     const bindingsStream_ = await myEngine_getNots.queryBindings(`
   SELECT ?o WHERE {
@@ -339,11 +452,9 @@ async function getRequestNotifications() {
     myEngine_getNots.invalidateHttpCache();
     const bindings_ = await bindingsStream_.toArray();
     bindings_.forEach((element) => {
-        if (document.getElementById(`r_${element.get('o').value}`) == null) {
-            document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="r_${element.get('o').value}" >Revoke ${element.get('o').value}</button>`;
-            document.getElementById(`r_${element.get('o').value}`).addEventListener('click', async () => { await revokingPersonAccessfromACL(element.get('o').value); await removeAccessNotification(element.get('o').value) });
-        }
-    })
+        let rqstr_webid = element.get('o').value;
+        updateRequestNotification(rqstr_webid);
+    });
 }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function revokingPersonAccessfromACL(rvk_aprvd_webid) {
@@ -467,12 +578,8 @@ async function GetCoordinates() {
     };
     if (navigator.geolocation) {
         locator = navigator.geolocation.watchPosition(async function (position) {
-            var a = document.createElement('a');
-            a.href = "https://www.openstreetmap.org/#map=18/" + position.coords.latitude + "/" + position.coords.longitude;
-            a.textContent = " Latitude:" + position.coords.latitude + "°, Longitude:" + position.coords.longitude + "°,Timestamp:" + position.timestamp;
-            document.getElementById('map-link').appendChild(a);
-            document.getElementById('map-link').appendChild(document.createElement("br"));
 
+            addPostedLocationHistory(position.coords.latitude, position.coords.longitude, position.timestamp);
 
             marker.setLatLng([position.coords.latitude, position.coords.longitude]);
             const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
