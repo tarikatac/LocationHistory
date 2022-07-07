@@ -1,4 +1,6 @@
+// TODO: seperate css
 import "./../scss/app.scss";
+
 import {
     login,
     handleIncomingRedirect,
@@ -7,6 +9,8 @@ import {
 import { fetch as solidfetch } from "@inrupt/solid-client-authn-browser";
 import "leaflet";
 import { LineUtil } from "leaflet";
+
+import { createUserFromWebID } from "./services/webid";
 
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
@@ -20,6 +24,12 @@ let posting_loc = false;
 let login_button, post_location_button, req_frnd_button;
 
 async function init() {
+    // gets("http://localhost:3000/tarik/profile/card#me").then(v => {
+    //     console.log(v);
+    // }).catch(e => {
+    //     console.log(e);
+    // });
+
     // initialize variables for DOM objects
     login_button = document.getElementById('webid-login');
     post_location_button = document.getElementById('start-posting');
@@ -36,9 +46,12 @@ async function addEventListeners() {
     login_button.addEventListener('click', async () => {
         let webID = document.getElementById('webid').value;
         try {
+
             let oidcIssuer = await getIssuerFromWebID(webID);
+
             window.sessionStorage.setItem('webID_later', webID);
             window.sessionStorage.setItem('oidcIssuer_later', oidcIssuer);
+
             await Login(oidcIssuer);
         }
         catch (error) {
@@ -630,7 +643,7 @@ async function GetCoordinates() {
             addPostedLocationHistory(position.coords.latitude, position.coords.longitude, position.timestamp);
 
             marker.setLatLng([position.coords.latitude, position.coords.longitude]);
-            
+
             const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
         @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
