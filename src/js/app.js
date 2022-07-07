@@ -70,10 +70,15 @@ async function addEventListeners() {
     });
 
     req_frnd_button.addEventListener('click', async () => {
+
         let webid_frnd = document.getElementById('friend-webid').value;
         let podUrl_frnd = await getStorageFromWebID(webid_frnd);
+
+        addFriendsCard(webid_frnd);
+
         const file = `${podUrl_frnd}public/YourLocationHistory/inbox.ttl`;
         await sendNotifications(file);
+
     });
 
 }
@@ -99,86 +104,131 @@ async function addRequestNotification(webid) {
     let approve_button = li.querySelector("div>div>button");
 
     approve_button.addEventListener('click', async (event) => {
-        if(event.target.classList.contains("green")) {
-            event.target.classList.add("hidden");
+        if(event.currentTarget.classList.contains("green")) {
+            event.currentTarget.classList.add("hidden");
 
-            //loading bar
+            //add loading bar
             let div = document.createElement("div");
             div.classList.add("progress");
             div.innerHTML = '<div class="indeterminate"></div>';
-            event.target.parentElement.parentElement.parentElement.appendChild(div);
+            event.currentTarget.parentElement.parentElement.parentElement.appendChild(div);
 
-            await approvedSentNotification(rqstr_webid);
-            await addRequestingPersontoACL(rqstr_webid);
-        } 
+            await approvedSentNotification(webid);
+            await addRequestingPersontoACL(webid);
+        }
         else {
-            // event.target.classList.add('green');
-            // event.target.classList.remove('red');
-            // event.target.firstChild.textContent = "done";
+            console.log("click");
+            await revokingPersonAccessfromACL(webid);
+            await removeAccessNotification(webid);
+
+            // remove notification
+            removeRequestNotification(webid);
         }
     });
 
-    requests_list.appendChild(li);
+    requests_list.insertBefore(li, requests_list.firstChild);
+}
 
-    
-
-    // document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="${element.get('o').value}" >Approve ${element.get('o').value}</button>`;
-    // document.getElementById(rqstr_webid).addEventListener('click', async () => {
-    //     await approvedSentNotification(rqstr_webid);
-    //     await addRequestingPersontoACL(rqstr_webid);
-    // });
+async function removeRequestNotification(webid) {
+    let li = document.getElementById("req_" + webid);
+    if(li) {
+        li.remove();
+    }
 }
 
 async function updateRequestNotification(webid) {
     let li = document.getElementById("req_" + webid);
 
     if(li) {
-        // remove loading bar
-        li.querySelector(".progress").remove();
-
-        // add X button
-        // <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
-        //             <span class="material-symbols-outlined">
-        //                 done
-        //             </span>
-        //         </button>
         let approve_button = li.querySelector("div>div>button");
-        approve_button.classList.add('red');
-        approve_button.classList.remove('green');
-        approve_button.firstChild.textContent = "close";
-        approve_button.classList.remove("hidden");
+        if(approve_button && approve_button.classList.contains('green')) {
+            // add X button
+            // <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
+            //             <span class="material-symbols-outlined">
+            //                 done
+            //             </span>
+            //         </button>
+            
+            approve_button.classList.add('red');
+            approve_button.classList.remove('green');
+            approve_button.firstElementChild.textContent = "close";
+            approve_button.classList.remove("hidden");
+
+            // remove loading bar
+            let bar = li.querySelector(".progress");
+            if(bar) {
+                bar.remove();
+            }
+        }        
     }
-
-
-    // if (document.getElementById(`r_${element.get('o').value}`) == null) {
-    //     document.getElementById("approve_revoke").innerHTML += ` <button type="button" id="r_${element.get('o').value}" >Revoke ${element.get('o').value}</button>`;
-    //     document.getElementById(`r_${element.get('o').value}`).addEventListener('click', async () => { await revokingPersonAccessfromACL(element.get('o').value); await removeAccessNotification(element.get('o').value) });
-    // }
 }
 
 //TODO: in future pass something like a user object that has webid & more info like name and pic
 async function addFriendsCard(webid) {
     let friends_list = document.getElementById('friends-list');
-    let li = document.createElement('li');
-    li.id = webid;
-    li.className = "collection-item avatar";
-    li.innerHTML =`
-        <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
-        <span class="title">${webid}</span>
-        <p>Location not shared</p>
-        <div class="secondary-content collection-checkbox">
-            <label>
-                <input type="checkbox" class="filled-in" checked="" />
-                <span></span>
-            </label>
-        </div>
-    `;
 
-    let checkbox = li.querySelector("div>label>input");
-    checkbox.addEventListener('click', async () => {
+    if(friends_list && document.getElementById("card_" + webid) === null) {
+        let li = document.createElement('li');
+        li.id = "card_" + webid;
+        li.className = "collection-item avatar";
+        li.innerHTML =`
+            <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
+            <span class="title">${webid}</span>
+            <p>Location not shared</p>
+            <div class="secondary-content collection-checkbox hidden">
+                <label>
+                    <input type="checkbox" class="filled-in" checked="" />
+                    <span></span>
+                </label>
+            </div>
+            <div class="progress">
+                <div class="indeterminate"></div>
+            </div>
+        `;
 
-    });
+        friends_list.insertBefore(li, friends_list.firstChild);
 
+        let checkbox = li.querySelector("div>label>input");
+        checkbox.addEventListener('change', async (e) => {
+            if(e.currentTarget.checked) {
+
+            } else {
+
+            }
+        });
+    }
+}
+
+async function updateFriendsCard(webid) {
+    let friends_list = document.getElementById('friends-list');
+    let li =  document.getElementById("card_" + webid);
+
+    if(friends_list && li) {
+        let checkbox_container = li.querySelector("div.collection-checkbox");
+        if(checkbox_container && checkbox_container.classList.contains("hidden")) {
+            // show checkbox
+            checkbox_container.classList.remove("hidden");
+
+            // remove loading bar
+            let bar = li.querySelector(".progress");
+            if(bar) {
+                bar.remove();
+            }
+
+            // edit text
+            let p = li.querySelector("p");
+            if(p) {
+                p.innerText = "Shared location";
+            }
+        }
+    }
+}
+
+async function removeFriendsCard(webid) {
+    let li = document.getElementById("card_" + webid);
+    if(li) {
+        li.remove();
+    }
 }
 
 async function setLoginMessage(text) {
@@ -204,7 +254,7 @@ async function addPostedLocationHistory(lat, long, timestamp) {
     a.href = "https://www.openstreetmap.org/#map=18/" + lat + "/" + long;
     a.textContent = " Latitude:" + lat + "°, Longitude:" + long + "°,Timestamp:" + timestamp;
     a.classList.add("collection-item");
-    collection.appendChild(a);
+    collection.insertBefore(a, collection.firstChild);
 }
 
 async function initMap() {
@@ -458,8 +508,6 @@ async function getRequestNotifications() {
 }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function revokingPersonAccessfromACL(rvk_aprvd_webid) {
-    var element = document.getElementById(`r_${rvk_aprvd_webid}`);
-    element.parentNode.removeChild(element);
     const query_extra = `:Read
         a acl:Authorization;
         acl:accessTo D:;
@@ -582,6 +630,7 @@ async function GetCoordinates() {
             addPostedLocationHistory(position.coords.latitude, position.coords.longitude, position.timestamp);
 
             marker.setLatLng([position.coords.latitude, position.coords.longitude]);
+            
             const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
         @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
@@ -718,6 +767,8 @@ async function getLatLongofFriend(friend_webid, friend_container) {
         friendMarker.addTo(map);
         friendMarker._icon.classList.add("huechange");
         friendMarker.bindTooltip(data_array[0] + ` ${data_array[1]}` + `\r\n Last seen at ${new Date(Number(tmstmp_)).toLocaleString()}`).openTooltip();
+
+        updateFriendsCard(friend_webid);
     }
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
