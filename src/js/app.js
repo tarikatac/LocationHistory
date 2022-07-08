@@ -8,11 +8,18 @@ import {
 } from "@inrupt/solid-client-authn-browser";
 import { fetch as solidfetch } from "@inrupt/solid-client-authn-browser";
 import "leaflet";
-import { LineUtil } from "leaflet";
+import { LineUtil, polyline } from "leaflet";
 
 import { createUserFromWebID } from "./services/webid";
 import { loginUser, handleRedirectAfterLogin } from "./services/authenticate";
-import { createInbox, givePublicAccesstotheInbox, giveAccessoftheContainertoOwner } from "./services/locationHistory";
+import { 
+    createInbox,
+    givePublicAccesstotheInbox,
+    giveAccessoftheContainertoOwner,
+    sendNotification,
+    getRequestNotifications,
+    approveAccess
+} from "./services/locationHistory";
 
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
@@ -25,6 +32,7 @@ let pod_url;
 let posting_loc = false;
 let login_button, post_location_button, req_frnd_button;
 let currentUser;
+let friendUsers = [];
 
 async function init() {
     // initialize variables for DOM objects
@@ -69,8 +77,7 @@ function addEventListeners() {
 
             await GetCoordinates();
 
-            //TODO: atm you need to start posting location to be able to recieve requests, maybe change this
-            await fetchLocations();
+            // await fetchLocations();
             
             post_location_button.textContent = "Stop posting loc";
             post_location_button.classList.remove('green');
@@ -87,19 +94,37 @@ function addEventListeners() {
 
     req_frnd_button.addEventListener('click', async () => {
 
-        let webid_frnd = document.getElementById('friend-webid').value;
-        let podUrl_frnd = await getStorageFromWebID(webid_frnd);
+        setReqMessage("");
+        displayRequestLoading();
 
-        addFriendsCard(webid_frnd);
+        try {
+            let webid_frnd = document.getElementById('friend-webid').value;
+            if(!webid_frnd) throw new Error("Invalid WebID");
 
-        const file = `${podUrl_frnd}public/YourLocationHistory/inbox.ttl`;
-        await sendNotifications(file);
+            // create user object with available info in pod
+            let friendUser = await createUserFromWebID(webid_frnd);
+            friendUsers.push(friendUser);
 
+            await sendNotification(currentUser.webid, friendUser.storage);
+
+
+            addFriendsCard(friendUser);
+
+        } catch(error) {
+            setReqMessage(error.message);
+        } finally {
+            hideRequestLoading();
+        }
+
+        hideRequestLoading();
     });
 
 }
 
 async function handleRedirect() {
+    setLoginLoadingMessage("Checking user...");
+    displayLoginLoadingScreen();
+
     try {
         currentUser = await handleRedirectAfterLogin();
 
@@ -107,7 +132,7 @@ async function handleRedirect() {
             return;
 
         setLoginLoadingMessage("Creating inbox...");
-        displayLoginLoadingScreen();
+        // displayLoginLoadingScreen();
         await createInbox(currentUser.storage);
 
         setLoginLoadingMessage("Setting inbox permissions...");
@@ -122,11 +147,51 @@ async function handleRedirect() {
         hideLoginLoadingScreen();
     }
 
+    //successful login, start checking for notifications and friends periodically
+    mainLoop();
+
     hideLoginLoadingScreen();
     hideLoginScreen();
 }
 
-async function addRequestNotification(webid) {
+// checks periodically for notifications and friends new locations
+async function mainLoop() {
+
+    createRequestNotifications();
+
+    const { acptr_webid, lctn_container } = await getAccessGrantedNotifications();
+
+    await fetchWebid_Container(acptr_webid, lctn_container);
+
+    window.setTimeout(mainLoop, 5000);
+}
+
+async function createRequestNotifications() {
+    let new_requests = {};
+    try {
+        new_requests = await getRequestNotifications();
+
+        // make a notification for all the requests
+        for(let webid in new_requests) {
+            if(requestNotificationExists(webid)) {
+                addRequestNotification(rqstr_webid);
+            }
+            if(new_requests[webid]) {
+                updateRequestNotification(rqstr_webid);
+            }
+        } 
+
+        requests = new_requests;
+    } catch(error) {
+        console.log(error);
+    }   
+}
+
+function requestNotificationExists(webid) {
+    return document.getElementById("req_" + webid) ? true : false;
+}
+
+function addRequestNotification(webid) {
     let requests_list = document.querySelector('#requests>.collection');
     let li = document.createElement('li');
     li.className = "collection-item";
@@ -142,29 +207,37 @@ async function addRequestNotification(webid) {
             </button>
         </div>
     </div>
+    <div class="progress hidden">
+        <div class="indeterminate"></div>
+    </div>
     `;
 
     let approve_button = li.querySelector("div>div>button");
 
     approve_button.addEventListener('click', async (event) => {
-        if(event.currentTarget.classList.contains("green")) {
-            event.currentTarget.classList.add("hidden");
+        let button = event.currentTarget;
+        let webid_frnd = event.currentTarget.parentElement.parentElement.parentElement.id.split("_")[1];
+        // green button for accept, red button for decline/revoke
+        if(button.classList.contains("green")) {
+            button.classList.add("hidden");
 
             //add loading bar
-            let div = document.createElement("div");
-            div.classList.add("progress");
-            div.innerHTML = '<div class="indeterminate"></div>';
-            event.currentTarget.parentElement.parentElement.parentElement.appendChild(div);
+            button.parentElement.parentElement.parentElement.querySelector(".progress").classList.remove("hidden");
 
-            await approvedSentNotification(webid);
-            await addRequestingPersontoACL(webid);
+            let friend;
+            try {
+                friend = await createUserFromWebID(webid_frnd);
+                approveAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
+            } catch(error) {
+                removeRequestNotification(webid_frnd);
+                console.log(error);
+            }
         }
         else {
-            await revokingPersonAccessfromACL(webid);
-            await removeAccessNotification(webid);
+            await revokingPersonAccessfromACL(webid_frnd);
+            await removeAccessNotification(webid_frnd);
 
-            // remove notification
-            removeRequestNotification(webid);
+            removeRequestNotification(webid_frnd);
         }
     });
 
@@ -205,17 +278,16 @@ async function updateRequestNotification(webid) {
     }
 }
 
-//TODO: in future pass something like a user object that has webid & more info like name and pic
-async function addFriendsCard(webid) {
+function addFriendsCard(user) {
     let friends_list = document.getElementById('friends-list');
 
-    if(friends_list && document.getElementById("card_" + webid) === null) {
+    if(friends_list && document.getElementById("card_" + user.webid) === null) {
         let li = document.createElement('li');
-        li.id = "card_" + webid;
+        li.id = "card_" + user.webid;
         li.className = "collection-item avatar";
         li.innerHTML =`
             <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
-            <span class="title">${webid}</span>
+            <span class="title">${user.webid}</span>
             <p>Location not shared</p>
             <div class="secondary-content collection-checkbox hidden">
                 <label>
@@ -230,6 +302,7 @@ async function addFriendsCard(webid) {
 
         friends_list.insertBefore(li, friends_list.firstChild);
 
+        // TODO: make checkbox toggle the markers on the map
         let checkbox = li.querySelector("div>label>input");
         checkbox.addEventListener('change', async (e) => {
             if(e.currentTarget.checked) {
@@ -241,9 +314,9 @@ async function addFriendsCard(webid) {
     }
 }
 
-async function updateFriendsCard(webid) {
+function updateFriendsCard(user) {
     let friends_list = document.getElementById('friends-list');
-    let li =  document.getElementById("card_" + webid);
+    let li =  document.getElementById("card_" + user.webid);
 
     if(friends_list && li) {
         let checkbox_container = li.querySelector("div.collection-checkbox");
@@ -266,14 +339,14 @@ async function updateFriendsCard(webid) {
     }
 }
 
-async function removeFriendsCard(webid) {
-    let li = document.getElementById("card_" + webid);
+function removeFriendsCard(user) {
+    let li = document.getElementById("card_" + user.webid);
     if(li) {
         li.remove();
     }
 }
 
-async function setLoginMessage(text) {
+function setLoginMessage(text) {
     let login_message = document.getElementById('login-message');
     login_message.textContent = text;
     login_message.classList.remove("invisible");
@@ -294,10 +367,18 @@ function hideLoginLoadingScreen() {
     document.getElementById("login-content").classList.remove("invisible");
 }
 
+function displayRequestLoading() {
+    document.querySelector("#friends > div > div.progress").classList.remove("invisible");
+}
+
+function hideRequestLoading() {
+    document.querySelector("#friends > div > div.progress").classList.add("invisible");
+}
+
 function setReqMessage(text) {
     let req_message = document.getElementById('req-message');
     req_message.textContent = text;
-    req_message.classList.remove("invisible");
+    req_message.classList.remove("hidden");
 }
 
 function hideLoginScreen() {
@@ -375,18 +456,18 @@ async function myfetchFunction(url) {
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // TODO: crashes if data cannot be queried from webid
 // can not catch the error with try catch or .catch ???
-async function getIssuerFromWebID(webid) {
-    var myEngine_getIssuer = new QueryEngine();
-    const bindingsStream = await myEngine_getIssuer.queryBindings(`
-    SELECT ?o WHERE {
-    ?s <http://www.w3.org/ns/solid/terms#oidcIssuer> ?o.
-    }`, {
-        sources: [`${webid}`],
-    });
+// async function getIssuerFromWebID(webid) {
+//     var myEngine_getIssuer = new QueryEngine();
+//     const bindingsStream = await myEngine_getIssuer.queryBindings(`
+//     SELECT ?o WHERE {
+//     ?s <http://www.w3.org/ns/solid/terms#oidcIssuer> ?o.
+//     }`, {
+//         sources: [`${webid}`],
+//     });
 
-    const bindings = await bindingsStream.toArray();
-    return (bindings[0].get('o').value);
-}
+//     const bindings = await bindingsStream.toArray();
+//     return (bindings[0].get('o').value);
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function getStorageFromWebID(webid) {
     var myEngine_getIssuer = new QueryEngine();
@@ -475,20 +556,20 @@ async function getDataFromWebID(webid) {
 //     }
 // }
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function sendNotifications(file_frnd) {
-    //Storing all participant pod urls in my solid comunity pod.
-    const query = `INSERT DATA {<> <http://tobeadded.com/LocationRequestedBy> <${window.sessionStorage.getItem('webID_later')}>.}`;
-    // Send a PATCH request the pod url to inbox.ttl 
-    const response = await fetch(file_frnd, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-        body: query
-    });
-    if (300 < response.status && response.status < 600) {
-        setReqMessage("Your friend may not have used our app yet!");
-        console.log(` Error code is ${response.status} Your friend may not have used our app yet!`);
-    }
-}
+// async function sendNotifications(file_frnd) {
+//     //Storing all participant pod urls in my solid comunity pod.
+//     const query = `INSERT DATA {<> <http://tobeadded.com/LocationRequestedBy> <${window.sessionStorage.getItem('webID_later')}>.}`;
+//     // Send a PATCH request the pod url to inbox.ttl 
+//     const response = await fetch(file_frnd, {
+//         method: 'PATCH',
+//         headers: { 'Content-Type': 'application/sparql-update' },
+//         body: query
+//     });
+//     if (300 < response.status && response.status < 600) {
+//         setReqMessage("Your friend may not have used our app yet!");
+//         console.log(` Error code is ${response.status} Your friend may not have used our app yet!`);
+//     }
+// }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function sendRequestAcceptedNotification(rqstr_webid) {
     const rqstr_issuer = await getStorageFromWebID(rqstr_webid);
@@ -530,43 +611,44 @@ async function addRequestingPersontoACL(webid_rqstr) {
     await sendRequestAcceptedNotification(webid_rqstr);
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-var myEngine_getNots = new QueryEngine();
-let rqstr_webid_array = new Array();
-async function getRequestNotifications() {
-    const file = container.split('Data')[0] + 'inbox.ttl';
-    const bindingsStream = await myEngine_getNots.queryBindings(`
-  SELECT ?o WHERE {
-   ?s <http://tobeadded.com/LocationRequestedBy> ?o.
-  }`, {
-        sources: [`${file}`],
-        fetch: myfetchFunction,
-    });
-    myEngine_getNots.invalidateHttpCache();
-    const bindings = await bindingsStream.toArray();
-    bindings.forEach(element => {
-        let rqstr_webid = element.get('o').value;
-        if (document.getElementById("req_" + rqstr_webid) == null) {
+// var myEngine_getNots = new QueryEngine();
+// let rqstr_webid_array = new Array();
 
-            addRequestNotification(rqstr_webid);            
+// async function getRequestNotifications() {
+//     const file = container.split('Data')[0] + 'inbox.ttl';
+//     const bindingsStream = await myEngine_getNots.queryBindings(`
+//   SELECT ?o WHERE {
+//    ?s <http://tobeadded.com/LocationRequestedBy> ?o.
+//   }`, {
+//         sources: [`${file}`],
+//         fetch: myfetchFunction,
+//     });
+//     myEngine_getNots.invalidateHttpCache();
+//     const bindings = await bindingsStream.toArray();
+//     bindings.forEach(element => {
+//         let rqstr_webid = element.get('o').value;
+//         if (document.getElementById("req_" + rqstr_webid) == null) {
 
-            rqstr_webid_array.push(rqstr_webid)
-        }
+//             addRequestNotification(rqstr_webid);            
+
+//             rqstr_webid_array.push(rqstr_webid)
+//         }
         
-    });
-    const bindingsStream_ = await myEngine_getNots.queryBindings(`
-  SELECT ?o WHERE {
-   ?s <http://tobeadded.com/YouGrantedAccessTo> ?o.
-  }`, {
-        sources: [`${file}`],
-        fetch: myfetchFunction,
-    });
-    myEngine_getNots.invalidateHttpCache();
-    const bindings_ = await bindingsStream_.toArray();
-    bindings_.forEach((element) => {
-        let rqstr_webid = element.get('o').value;
-        updateRequestNotification(rqstr_webid);
-    });
-}
+//     });
+//     const bindingsStream_ = await myEngine_getNots.queryBindings(`
+//   SELECT ?o WHERE {
+//    ?s <http://tobeadded.com/YouGrantedAccessTo> ?o.
+//   }`, {
+//         sources: [`${file}`],
+//         fetch: myfetchFunction,
+//     });
+//     myEngine_getNots.invalidateHttpCache();
+//     const bindings_ = await bindingsStream_.toArray();
+//     bindings_.forEach((element) => {
+//         let rqstr_webid = element.get('o').value;
+//         updateRequestNotification(rqstr_webid);
+//     });
+// }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function revokingPersonAccessfromACL(rvk_aprvd_webid) {
     const query_extra = `:Read
@@ -670,14 +752,14 @@ async function fetchWebid_Container(acptr_webid, lctn_container) {
     });
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function fetchLocations() {
-    window.setInterval(
-        async () => {
-            await getRequestNotifications();
-            const { acptr_webid, lctn_container } = await getAccessGrantedNotifications();
-            await fetchWebid_Container(acptr_webid, lctn_container);
-        }, 5000);
-}
+// async function fetchLocations() {
+//     window.setInterval(
+//         async () => {
+//             await getRequestNotifications();
+//             const { acptr_webid, lctn_container } = await getAccessGrantedNotifications();
+//             await fetchWebid_Container(acptr_webid, lctn_container);
+//         }, 5000);
+// }
 //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function GetCoordinates() {
     var optn = {

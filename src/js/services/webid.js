@@ -1,15 +1,15 @@
 import { User } from "../models/user";
 
+// query engine gives error when invalid source is used. fix:
 window.setImmediate = window.setTimeout;
 
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
+const myEngine = new QueryEngine();
 
 
 export async function getIssuerFromWebID(webid) {
     if(!webid)
         return null;
-
-    const myEngine = new QueryEngine();
 
     try {
         const bindingsStream = await myEngine.queryBindings(`
@@ -30,15 +30,13 @@ export async function getIssuerFromWebID(webid) {
         return null;
 
     } catch(error) {
-        throw new Error(`Error retrieving solid:oidcIssuer for ${webid}`);
+        throw new Error('Error retrieving solid:oidcIssuer');
     }
 }
 
 export async function getStorageFromWebID(webid) {
     if(!webid)
         return null;
-
-    const myEngine = new QueryEngine();
     
     try {
         const bindingsStream = await myEngine.queryBindings(`
@@ -55,15 +53,13 @@ export async function getStorageFromWebID(webid) {
         return null;
 
     } catch(error) {
-        throw new Error(`Error retrieving pim:storage for ${webid}`);
+        throw new Error('Error retrieving pim:storage');
     }
 }
 
 export async function getUserDataFromWebID(webid) {
     if(!webid)
         return null;
-
-    const myEngine = new QueryEngine();
     
     try {
         const bindingsStream = await myEngine.queryBindings(`

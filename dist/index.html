@@ -25,19 +25,6 @@
 
 <body>
 	<header></header>
-
-	<!-- <div id="output">
-	</div>
-
-	
-	<button id="request" class="hidden">Request</button>
-
-	<div id="approve_revoke">
-	</div>
-
-	<p id = "status"></p> -->
-
-
 	<main>
 		<section id="login" class="over-screen">
 			<div id="login-box" class="center-align">
@@ -89,7 +76,10 @@
 				<div class="center-align">
 					<input type="text" id="friend-webid" class="" placeholder="webID">
 					<button id="req-frnd" class="waves-effect waves-light btn green darken-2">Request Friend's Location!</button>
-					<p id="req-message" class="invisible error-msg">error</p>
+					<div class="progress invisible">
+						<div class="indeterminate"></div>
+					</div>
+					<p id="req-message" class="hidden error-msg">error</p>
 				</div>
 				<ul id="friends-list" class="collection">
 					<!-- <li id="card_webid" class="collection-item avatar">
