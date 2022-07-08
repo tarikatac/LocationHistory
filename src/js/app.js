@@ -47,6 +47,7 @@ function addEventListeners() {
 
         try {
             const webid = document.getElementById('webid').value;
+            if(!webid) throw new Error("WebID is invalid");
             currentUser = await createUserFromWebID(webid);
             
             setLoginLoadingMessage("Logging in to Solid client...");

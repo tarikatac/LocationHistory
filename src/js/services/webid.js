@@ -1,11 +1,15 @@
 import { User } from "../models/user";
 
+window.setImmediate = window.setTimeout;
+
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
+
 export async function getIssuerFromWebID(webid) {
+    if(!webid)
+        return null;
+
     const myEngine = new QueryEngine();
-    
-    console.log(webid);
 
     try {
         const bindingsStream = await myEngine.queryBindings(`
@@ -13,6 +17,10 @@ export async function getIssuerFromWebID(webid) {
         ?s <http://www.w3.org/ns/solid/terms#oidcIssuer> ?o.
         }`, {
             sources: [`${webid}`],
+        });
+
+        bindingsStream.on('error', (e) => {
+            console.log(e);
         });
 
         const bindings = await bindingsStream.toArray();
@@ -27,6 +35,9 @@ export async function getIssuerFromWebID(webid) {
 }
 
 export async function getStorageFromWebID(webid) {
+    if(!webid)
+        return null;
+
     const myEngine = new QueryEngine();
     
     try {
@@ -49,6 +60,9 @@ export async function getStorageFromWebID(webid) {
 }
 
 export async function getUserDataFromWebID(webid) {
+    if(!webid)
+        return null;
+
     const myEngine = new QueryEngine();
     
     try {
