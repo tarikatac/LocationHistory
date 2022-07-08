@@ -31,15 +31,22 @@ img.huechange {
     background-color: rgba(100,100,100,0.4);
 }
 
-#login-box {
+#login > div {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background-color: white;
     width: 500px;
     padding: 20px;
+}
+
+#login-box {
     border-radius: 5px;
+    background-color: white;
+}
+
+#login-loading-message {
+    margin-bottom: 40px;
 }
 
 .error-msg {

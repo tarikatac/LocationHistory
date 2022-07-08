@@ -11,6 +11,8 @@ import "leaflet";
 import { LineUtil } from "leaflet";
 
 import { createUserFromWebID } from "./services/webid";
+import { loginUser, handleRedirectAfterLogin } from "./services/authenticate";
+import { createInbox, givePublicAccesstotheInbox, giveAccessoftheContainertoOwner } from "./services/locationHistory";
 
 const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 
@@ -22,40 +24,40 @@ let pod_url;
 
 let posting_loc = false;
 let login_button, post_location_button, req_frnd_button;
+let currentUser;
 
 async function init() {
-    // gets("http://localhost:3000/tarik/profile/card#me").then(v => {
-    //     console.log(v);
-    // }).catch(e => {
-    //     console.log(e);
-    // });
-
     // initialize variables for DOM objects
     login_button = document.getElementById('webid-login');
     post_location_button = document.getElementById('start-posting');
     req_frnd_button = document.getElementById('req-frnd');
 
-    
-
     addEventListeners();
+
+    handleRedirect();
 
     initMap();
 }
 
-async function addEventListeners() {
+function addEventListeners() {
     login_button.addEventListener('click', async () => {
-        let webID = document.getElementById('webid').value;
+
+        setLoginLoadingMessage("Getting user info from webID...");
+        displayLoginLoadingScreen();
+
         try {
-
-            let oidcIssuer = await getIssuerFromWebID(webID);
-
-            window.sessionStorage.setItem('webID_later', webID);
-            window.sessionStorage.setItem('oidcIssuer_later', oidcIssuer);
-
-            await Login(oidcIssuer);
-        }
-        catch (error) {
-            setLoginMessage("OIDC Issuer not found in webid or invalid webID.");
+            const webid = document.getElementById('webid').value;
+            currentUser = await createUserFromWebID(webid);
+            
+            setLoginLoadingMessage("Logging in to Solid client...");
+            await loginUser(currentUser);
+            
+            // check handleRedirectAfterLogin for further steps
+        } catch(error) {
+            hideLoginLoadingScreen();
+            setLoginMessage(error.message);
+        } finally {
+            hideLoginLoadingScreen();
         }
     });
 
@@ -96,6 +98,33 @@ async function addEventListeners() {
 
 }
 
+async function handleRedirect() {
+    try {
+        currentUser = await handleRedirectAfterLogin();
+
+        if(currentUser === null)
+            return;
+
+        setLoginLoadingMessage("Creating inbox...");
+        displayLoginLoadingScreen();
+        await createInbox(currentUser.storage);
+
+        setLoginLoadingMessage("Setting inbox permissions...");
+        await givePublicAccesstotheInbox(currentUser.storage);
+
+        setLoginLoadingMessage("Giving access of the container to owner...");
+        await giveAccessoftheContainertoOwner(currentUser.webid, currentUser.storage);
+
+    } catch(error) {
+        setLoginMessage(error.message);
+    } finally {
+        hideLoginLoadingScreen();
+    }
+
+    hideLoginLoadingScreen();
+    hideLoginScreen();
+}
+
 async function addRequestNotification(webid) {
     let requests_list = document.querySelector('#requests>.collection');
     let li = document.createElement('li');
@@ -130,7 +159,6 @@ async function addRequestNotification(webid) {
             await addRequestingPersontoACL(webid);
         }
         else {
-            console.log("click");
             await revokingPersonAccessfromACL(webid);
             await removeAccessNotification(webid);
 
@@ -250,18 +278,33 @@ async function setLoginMessage(text) {
     login_message.classList.remove("invisible");
 }
 
-async function setReqMessage(text) {
+function setLoginLoadingMessage(text) {
+    let login_loading_message = document.getElementById("login-loading-message");
+    login_loading_message.textContent = text;
+}
+
+function displayLoginLoadingScreen() {
+    document.getElementById("login-loading").classList.remove("hidden");
+    document.getElementById("login-content").classList.add("invisible");
+}
+
+function hideLoginLoadingScreen() {
+    document.getElementById("login-loading").classList.add("hidden");
+    document.getElementById("login-content").classList.remove("invisible");
+}
+
+function setReqMessage(text) {
     let req_message = document.getElementById('req-message');
     req_message.textContent = text;
     req_message.classList.remove("invisible");
 }
 
-async function hideLoginScreen() {
+function hideLoginScreen() {
     document.getElementById('login').classList.add('hidden');
 }
 
 // TODO: make the link move this map to the location & clean up look
-async function addPostedLocationHistory(lat, long, timestamp) {
+function addPostedLocationHistory(lat, long, timestamp) {
     let collection = document.getElementById('posted-locations');
     let a = document.createElement('a');
     a.href = "https://www.openstreetmap.org/#map=18/" + lat + "/" + long;
@@ -270,12 +313,16 @@ async function addPostedLocationHistory(lat, long, timestamp) {
     collection.insertBefore(a, collection.firstChild);
 }
 
-async function initMap() {
+function initMap() {
     map.setView([0, 0], 3);
     const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
     const tileURL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
     const tiles = L.tileLayer(tileURL, { attribution });
     tiles.addTo(map);
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 init();
@@ -286,36 +333,36 @@ init();
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function Login(Issuer) {
-    if (Issuer) {
-        if (!getDefaultSession().info.isLoggedIn) {
-            await login({
-                oidcIssuer: Issuer,
-                redirectUrl: window.location.href,
-                clientName: "LocationHistory"
-            });
-        }
+// async function Login(Issuer) {
+//     if (Issuer) {
+//         if (!getDefaultSession().info.isLoggedIn) {
+//             await login({
+//                 oidcIssuer: Issuer,
+//                 redirectUrl: window.location.href,
+//                 clientName: "LocationHistory"
+//             });
+//         }
 
-    }
-    //OIDC error message 
-}
+//     }
+//     //OIDC error message 
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function handleRedirectAfterLogin() {
-    await handleIncomingRedirect();
-    if (getDefaultSession().info.isLoggedIn) {
-        await hideLoginScreen();
-        // document.getElementById('output').textContent = "Session logged in!";
-        await settingContainer();
-        await createInbox();
-        await giveAccessoftheContainertoOwner();
-    }
-}
+// async function handleRedirectAfterLogin() {
+//     await handleIncomingRedirect();
+//     if (getDefaultSession().info.isLoggedIn) {
+//         await hideLoginScreen();
+//         // document.getElementById('output').textContent = "Session logged in!";
+//         await settingContainer();
+//         await createInbox();
+//         await giveAccessoftheContainertoOwner();
+//     }
+// }
 
-handleRedirectAfterLogin();
+// handleRedirectAfterLogin();
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function myfetchFunction(url) {
     return await solidfetch(url, {
@@ -374,58 +421,58 @@ async function getDataFromWebID(webid) {
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function settingContainer() {
-    switch (Object.keys(window.sessionStorage)[0]) {
+// async function settingContainer() {
+//     switch (Object.keys(window.sessionStorage)[0]) {
 
-        case "webID_later":
-            pod_url = await getStorageFromWebID(window.sessionStorage.getItem('webID_later'));
-            container = pod_url + 'public/YourLocationHistory/Data/';
-            break;
+//         case "webID_later":
+//             pod_url = await getStorageFromWebID(window.sessionStorage.getItem('webID_later'));
+//             container = pod_url + 'public/YourLocationHistory/Data/';
+//             break;
 
-        case "oidcIssuer_later":
-            pod_url = await getStorageFromWebID(window.sessionStorage.getItem('webID_later'));
-            container = pod_url + 'public/YourLocationHistory/Data/';
-            break;
-    }
-}
+//         case "oidcIssuer_later":
+//             pod_url = await getStorageFromWebID(window.sessionStorage.getItem('webID_later'));
+//             container = pod_url + 'public/YourLocationHistory/Data/';
+//             break;
+//     }
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function GivePublicAccesstotheInbox() {
-    const file = container.split('Data')[0] + 'inbox.ttl';
-    const query = `<${pod_url}.acl#owner> a <http://www.w3.org/ns/auth/acl#Authorization>;
-    <http://www.w3.org/ns/auth/acl#mode> <http://www.w3.org/ns/auth/acl#Read>,<http://www.w3.org/ns/auth/acl#Write>, <http://www.w3.org/ns/auth/acl#Control>;
-    <http://www.w3.org/ns/auth/acl#accessTo> <${file}>;
-    <http://www.w3.org/ns/auth/acl#default> <${file}>;
-    <http://www.w3.org/ns/auth/acl#agentClass> <http://xmlns.com/foaf/0.1/Agent>.`
-    // Send a PUT request to inbox.ttl.acl
-    const response = await solidfetch(file + '.acl', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/turtle' },
-        body: query,
-        credentials: 'include'
-    });
-}
+// async function GivePublicAccesstotheInbox() {
+//     const file = container.split('Data')[0] + 'inbox.ttl';
+//     const query = `<${pod_url}.acl#owner> a <http://www.w3.org/ns/auth/acl#Authorization>;
+//     <http://www.w3.org/ns/auth/acl#mode> <http://www.w3.org/ns/auth/acl#Read>,<http://www.w3.org/ns/auth/acl#Write>, <http://www.w3.org/ns/auth/acl#Control>;
+//     <http://www.w3.org/ns/auth/acl#accessTo> <${file}>;
+//     <http://www.w3.org/ns/auth/acl#default> <${file}>;
+//     <http://www.w3.org/ns/auth/acl#agentClass> <http://xmlns.com/foaf/0.1/Agent>.`
+//     // Send a PUT request to inbox.ttl.acl
+//     const response = await solidfetch(file + '.acl', {
+//         method: 'PUT',
+//         headers: { 'Content-Type': 'text/turtle' },
+//         body: query,
+//         credentials: 'include'
+//     });
+// }
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function createInbox() {
-    const file = container.split('Data')[0] + 'inbox.ttl';
-    // Send a GET request to check if inbox exists
-    const response_ = await solidfetch(file, {
-        method: 'GET',
-        headers: { 'Content-Type': 'text/turtle' },
-        credentials: 'include'
-    });
+// async function createInbox() {
+//     const file = container.split('Data')[0] + 'inbox.ttl';
+//     // Send a GET request to check if inbox exists
+//     const response_ = await solidfetch(file, {
+//         method: 'GET',
+//         headers: { 'Content-Type': 'text/turtle' },
+//         credentials: 'include'
+//     });
 
-    if (300 < response_.status && response_.status < 500) {
-        const query = ``
-        // Send a PUT request to add inbox
-        const response = await solidfetch(file, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'text/turtle' },
-            body: query,
-            credentials: 'include'
-        });
-        await GivePublicAccesstotheInbox();
-    }
-}
+//     if (300 < response_.status && response_.status < 500) {
+//         const query = ``
+//         // Send a PUT request to add inbox
+//         const response = await solidfetch(file, {
+//             method: 'PUT',
+//             headers: { 'Content-Type': 'text/turtle' },
+//             body: query,
+//             credentials: 'include'
+//         });
+//         await GivePublicAccesstotheInbox();
+//     }
+// }
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function sendNotifications(file_frnd) {
     //Storing all participant pod urls in my solid comunity pod.
@@ -785,33 +832,33 @@ async function getLatLongofFriend(friend_webid, friend_container) {
     }
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function giveAccessoftheContainertoOwner() {
-    const response = await solidfetch(container + '.acl', {
-        method: 'GET',
-        headers: { 'Content-Type': 'text/turtle' },
-    });
-    if (response.status > 300) {
-        const query = `@prefix : <#>.
-      @prefix acl: <http://www.w3.org/ns/auth/acl#>.
-      @prefix foaf: <http://xmlns.com/foaf/0.1/>.
-      @prefix D: <./>.
+// async function giveAccessoftheContainertoOwner() {
+//     const response = await solidfetch(container + '.acl', {
+//         method: 'GET',
+//         headers: { 'Content-Type': 'text/turtle' },
+//     });
+//     if (response.status > 300) {
+//         const query = `@prefix : <#>.
+//       @prefix acl: <http://www.w3.org/ns/auth/acl#>.
+//       @prefix foaf: <http://xmlns.com/foaf/0.1/>.
+//       @prefix D: <./>.
       
 
-      :ReadControlWrite
-      a acl:Authorization;
-      acl:accessTo D:;
-      acl:agent <${window.sessionStorage.getItem('webID_later')}>;
-      acl:default D:;
-      acl:mode acl:Control, acl:Read, acl:Write.`
-        // Send a PUT request to post to the source
-        const response = await solidfetch(container + '.acl', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'text/turtle' },
-            body: query,
-            credentials: 'include'
-        });
-    }
-}
+//       :ReadControlWrite
+//       a acl:Authorization;
+//       acl:accessTo D:;
+//       acl:agent <${window.sessionStorage.getItem('webID_later')}>;
+//       acl:default D:;
+//       acl:mode acl:Control, acl:Read, acl:Write.`
+//         // Send a PUT request to post to the source
+//         const response = await solidfetch(container + '.acl', {
+//             method: 'PUT',
+//             headers: { 'Content-Type': 'text/turtle' },
+//             body: query,
+//             credentials: 'include'
+//         });
+//     }
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 

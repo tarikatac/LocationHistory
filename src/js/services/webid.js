@@ -5,6 +5,8 @@ const QueryEngine = require('@comunica/query-sparql').QueryEngine;
 export async function getIssuerFromWebID(webid) {
     const myEngine = new QueryEngine();
     
+    console.log(webid);
+
     try {
         const bindingsStream = await myEngine.queryBindings(`
         SELECT ?o WHERE {
@@ -52,7 +54,7 @@ export async function getUserDataFromWebID(webid) {
     try {
         const bindingsStream = await myEngine.queryBindings(`
         SELECT ?img ?familyName ?givenName WHERE {
-        ?s a foaf:Person;
+        ?s a foaf:Person.
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/img> ?img. }
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/familyName> ?familyName. }
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/givenName> ?givenName. }
@@ -77,16 +79,12 @@ export async function getUserDataFromWebID(webid) {
 export async function createUserFromWebID(webid) {
     const u = new User(webid);
 
-    try {
-        u.oidcIssuer = await getIssuerFromWebID(webid);
-        u.storage = await getStorageFromWebID(webid);
-        const userData = await getUserDataFromWebID(webid);
-        u.img = userData.img;
-        u.familyName = userData.familyName;
-        u.givenName = userData.givenName;
-    } catch(error) {
-        throw error;
-    }
+    u.oidcIssuer = await getIssuerFromWebID(webid);
+    u.storage = await getStorageFromWebID(webid);
+    const userData = await getUserDataFromWebID(webid);
+    u.img = userData.img;
+    u.familyName = userData.familyName;
+    u.givenName = userData.givenName;
 
     return u;
 }
