@@ -1,14 +1,22 @@
 export class User {
 
-    webID;
+    webid;
     oidcIssuer;
     storage;
     givenName;
     familyName;
     img;
+    hasAccess = false;
 
-    constructor(webID) {
-        this.webID = webID;
+    // {
+    //     lat,
+    //     long,
+    //     timestamp
+    // }
+    locations = [];
+
+    constructor(webid) {
+        this.webid = webid;
         
     }
 }

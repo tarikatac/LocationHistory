@@ -92,9 +92,11 @@ export async function createUserFromWebID(webid) {
     u.oidcIssuer = await getIssuerFromWebID(webid);
     u.storage = await getStorageFromWebID(webid);
     const userData = await getUserDataFromWebID(webid);
-    u.img = userData.img;
-    u.familyName = userData.familyName;
-    u.givenName = userData.givenName;
+    if(userData) {
+        u.img = userData.img;
+        u.familyName = userData.familyName;
+        u.givenName = userData.givenName;
+    }
 
     return u;
 }

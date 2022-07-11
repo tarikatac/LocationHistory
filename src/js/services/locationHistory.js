@@ -82,9 +82,8 @@ export async function givePublicAccesstotheInbox(user_storage) {
     }
 }
 
-export async function giveAccessoftheContainertoOwner(webID, storage) {
+export async function giveAccessoftheContainertoOwner(webid, storage) {
     const container = storage + container_path;
-    console.log(container);
     let response_;
     try {
         response_ = await solidfetch(container + '.acl', {
@@ -106,7 +105,7 @@ export async function giveAccessoftheContainertoOwner(webID, storage) {
         :ReadControlWrite
         a acl:Authorization;
         acl:accessTo D:;
-        acl:agent <${webID}>;
+        acl:agent <${webid}>;
         acl:default D:;
         acl:mode acl:Control, acl:Read, acl:Write.`
 
@@ -241,8 +240,8 @@ async function addRequestingPersontoACL(storage, friend_webid) {
         method: 'GET',
         headers: { 'Content-Type': 'text/turtle' },
     }).then(response_ => response_.text()).then(async (data) => {
-        response_data = data; if (!response_data.includes(query_extra)) {
-            const query = response_data + "\n" + query_extra;
+        if (!data.includes(query_extra)) {
+            const query = data + "\n" + query_extra;
             const response_put = await solidfetch(container + '.acl', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'text/turtle' },
@@ -265,4 +264,184 @@ async function sendRequestAcceptedNotification(webid, storage, friend_storage) {
     if (300 < response.status && response.status < 600) {
         throw new Error(` HTTP fetch Error code is ${response.status} Your friend may not have used our app yet!`)
     }
+}
+
+export async function revokeAccess(webid, storage, friend_webid, friend_storage) {
+    await revokingPersonAccessfromACL(storage, friend_webid);
+    await deleteRequestAcceptedNotification(webid, storage, friend_storage);
+    await removeAccessNotification(storage, friend_webid);
+}
+
+async function revokingPersonAccessfromACL(storage, friend_webid) {
+    const container = storage + container_path;
+
+    const query_extra = `:Read
+        a acl:Authorization;
+        acl:accessTo D:;
+        acl:agent <${friend_webid}>;
+        acl:default D:;
+        acl:mode acl:Read.`;
+    // Send a GET and PUT request to update the source
+    const response = await solidfetch(container + '.acl', {
+        method: 'GET',
+        headers: { 'Content-Type': 'text/turtle' },
+    }).then(response_ => response_.text()).then(async (data) => {
+        if (data.includes(query_extra)) {
+            const query = data.split(query_extra).join('\n');
+            const response_put = await solidfetch(container + '.acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'text/turtle' },
+                body: query
+            });
+        }
+    });
+}
+
+async function deleteRequestAcceptedNotification(webid, storage, friend_storage) {
+    const container = storage + container_path;
+    const friend_inbox = friend_storage + inbox_file;
+    const query = `DELETE DATA {<${webid}> <http://tobeadded.com/GrantedAccessToLocation> <${container}>.}`;
+    // Send a PATCH request the pod url to inbox.ttl 
+    const response = await fetch(friend_inbox, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/sparql-update' },
+        body: query
+    });
+    if (300 < response.status && response.status < 600) {
+        throw new Error(` HTTP fetch Error code is ${response.status}`);
+    }
+}
+
+async function removeAccessNotification(storage, friend_webid) {
+    const inbox = storage + inbox_file;
+    const query = `DELETE DATA {<> <http://tobeadded.com/YouGrantedAccessTo> <${friend_webid}>.}`;
+    // Send a PATCH request the pod url to names.ttl 
+    const response = await fetch(inbox, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/sparql-update' },
+        body: query
+    });
+    if (300 < response.status && response.status < 600) {
+        throw new Error("Your friend has not used our app yet or the entry could not be deleted!")
+    }
+}
+
+// returns an array of all webid/containers the user has access to
+export async function getAccessGrantedNotifications(storage) {
+    let haveAccess = [];
+    const inbox = storage + inbox_file;
+
+    const bindingsStream = await myEngine.queryBindings(`
+        SELECT ?acptr_webid ?lctn_container WHERE {
+            ?acptr_webid  <http://tobeadded.com/GrantedAccessToLocation> ?lctn_container.
+        }`, {
+        sources: [`${inbox}`],
+        fetch: myfetchFunction,
+    });
+
+    myEngine.invalidateHttpCache();
+
+    const bindings = await bindingsStream.toArray();
+    bindings.forEach((element) => {
+        haveAccess.push({
+            webid: element.get('acptr_webid').value,
+            container: element.get('lctn_container').value
+        });
+    });
+
+    return haveAccess;
+}
+
+export async function getLatestLocation(storage) {
+    // Fetch the latest timestamp 
+    const container = storage + container_path;
+    let bindingsStream;
+
+    bindingsStream = await myEngine.queryBindings(`
+        SELECT (STRAFTER(?fileName, "/YourLocationHistory/Data/") AS ?tmstmp) 
+        WHERE {
+            ?s <http://www.w3.org/ns/ldp#contains> ?name .
+            BIND (STR(?name) AS ?fileName)
+        }
+        ORDER BY DESC(?tmstmp)`, {
+        sources: [`${container}`],
+        fetch: myfetchFunction,
+        httpIncludeCredentials: true
+    });
+    myEngine.invalidateHttpCache();
+
+
+    // Consume results as an array (easier)
+    const bindings = await bindingsStream.toArray();
+
+    // no location data
+    if(!bindings[0])
+        return null;
+
+    const tmstmp = bindings[0].get('tmstmp').value;
+    //---------------------------------------------------------------------------------------
+    //Fetch the lat-long from the file corresponding to the latest timestamp
+    const bindingsStream_1 = await myEngine.queryBindings(`
+        SELECT ?lat ?long WHERE {
+        ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+            <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
+        }`, {
+        sources: [`${container}${bindings[0].get('tmstmp').value}`],
+        fetch: myfetchFunction,
+        httpIncludeCredentials: true
+    });
+
+    const bindings_1 = await bindingsStream_1.toArray();
+
+    //Return the latest Latitude and Longitude:
+    return {
+        lat: bindings_1[0].get('lat').value,
+        long: bindings_1[0].get('long').value,
+        timestamp: tmstmp
+    };
+}
+
+export async function putNewLocation(webid, storage, loc, platform) {
+    const container = storage + container_path;
+    const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
+        @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
+        @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+        @prefix plh: <https://w3id.org/personallocationhistory#> .
+        @prefix tm: <https://w3id.org/transportmode#> .
+        @prefix geo: <http://www.opengis.net/ont/geosparql#>.
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+
+        <${platform}> a sosa:Platform;
+        sosa:hosts <locationSensor>.
+
+        <locationSensor> a sosa:Sensor;
+        sosa:madeObservation <>;
+        sosa:observes <location>;
+        sosa:isHostedBy <${platform}>.
+
+        <> a sosa:Observation;
+        sosa:observedProperty <location> ;
+        sosa:hasResult <_result>;
+        sosa:featureOfInterest <${webid}> ;
+        sosa:hasSimpleResult "POINT(${loc.long} ${loc.lat})"^^geo:wktLiteral ;
+        sosa:madeBySensor <locationSensor>;
+        sosa:resultTime "${new Date(Number(loc.timestamp)).toISOString()}"^^xsd:dateTime.
+
+        <_result> a sosa:Result;
+        wgs84:long ${loc.long};
+        wgs84:lat ${loc.lat}.
+
+        <location> a sosa:ObservableProperty;
+        rdfs:label "Location"@en .
+
+        <${webid}> a sosa:FeatureOfInterest.        `
+        // const query = `<> <https://schema.org/latitude> "${position.coords.latitude}";<https://schema.org/longitude> "${position.coords.longitude}";<http://purl.org/dc/terms/created> "${position.timestamp}".`
+
+        // Send a PUT request to post to the source
+        const response = await solidfetch(container + `${loc.timestamp}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query,
+            credentials: 'include'
+        });
 }

@@ -1,33 +1,25 @@
 // TODO: seperate css
 import "./../scss/app.scss";
 
-import {
-    login,
-    handleIncomingRedirect,
-    getDefaultSession,
-} from "@inrupt/solid-client-authn-browser";
-import { fetch as solidfetch } from "@inrupt/solid-client-authn-browser";
 import "leaflet";
-import { LineUtil, polyline } from "leaflet";
 
 import { createUserFromWebID } from "./services/webid";
 import { loginUser, handleRedirectAfterLogin } from "./services/authenticate";
+import { createMarkerFromUser, initMap } from "./services/map";
 import { 
     createInbox,
     givePublicAccesstotheInbox,
     giveAccessoftheContainertoOwner,
     sendNotification,
     getRequestNotifications,
-    approveAccess
+    approveAccess,
+    revokeAccess,
+    getAccessGrantedNotifications,
+    getLatestLocation,
+    putNewLocation
 } from "./services/locationHistory";
 
-const QueryEngine = require('@comunica/query-sparql').QueryEngine;
-
-const map = L.map('map');
-const marker = L.marker([0, 0]);
 var locator;
-let container;
-let pod_url;
 
 let posting_loc = false;
 let login_button, post_location_button, req_frnd_button;
@@ -54,7 +46,8 @@ function addEventListeners() {
         displayLoginLoadingScreen();
 
         try {
-            const webid = document.getElementById('webid').value;
+            let webid = document.getElementById('webid').value;
+            webid = webid.trim();
             if(!webid) throw new Error("WebID is invalid");
             currentUser = await createUserFromWebID(webid);
             
@@ -74,6 +67,7 @@ function addEventListeners() {
         // TODO: if user is logged in check
         if(!posting_loc) {
             posting_loc = true;
+
 
             await GetCoordinates();
 
@@ -157,27 +151,102 @@ async function handleRedirect() {
 // checks periodically for notifications and friends new locations
 async function mainLoop() {
 
-    createRequestNotifications();
+    await createRequestNotifications();
 
-    const { acptr_webid, lctn_container } = await getAccessGrantedNotifications();
+    await updateFriendsAccessRights();
 
-    await fetchWebid_Container(acptr_webid, lctn_container);
+    await updateMap();
 
     window.setTimeout(mainLoop, 5000);
+}
+
+// updates the map for each friend the user has access to. Only a new marker is shown when a location with a newer timestamp is found.
+async function updateMap() {
+
+    console.log("friends/updatemap");
+    console.log(friendUsers);
+
+    // TODO: check why the marker is not created first itteration of mainloop
+    friendUsers.forEach(async (user, i) => {
+        if(user.hasAccess) {
+            const loc = await getLatestLocation(user.storage);
+            if(loc) {
+                // if it is a new location => push to array and create marker
+                let latest_loc = friendUsers[i].locations.length > 0 ? friendUsers[i].locations[friendUsers[i].locations.length - 1] : null;
+
+                if(!latest_loc || latest_loc.timestamp < loc.timestamp) {
+                    friendUsers[i].locations.push(loc);
+
+                    createMarkerFromUser(loc, user);
+                }
+                
+            }
+        }
+    });
+}
+
+async function updateFriendsAccessRights() {
+    let haveAccess;
+    try {
+        haveAccess = await getAccessGrantedNotifications(currentUser.storage);
+
+        console.log("haveAccess");
+        console.log(haveAccess);
+
+        // remove/update access
+        friendUsers.forEach((friend, i) => {
+            let j = haveAccess.findIndex(f => f.webid == friend.webid);
+            if(j >= 0) {
+                friendUsers[i].hasAccess = true;
+            } else {
+                friendUsers[i].hasAccess = false;
+            }
+        });
+
+        // add access
+        haveAccess.forEach(async (friend) => {
+            // TODO: atm it is possible to request access from self
+            if(friend.webid == currentUser.webid)
+                return;
+
+            // check if not already in friend list
+            let friendUser;
+            let i = friendUsers.findIndex(f => f.webid == friend.webid);
+            if(i == -1) {
+                // not yet in friend list => get info with the webid;
+                friendUser = await createUserFromWebID(friend.webid);
+                friendUser.hasAccess = true;
+                friendUsers.push(friendUser);
+            } else {
+                friendUsers[i].hasAccess = true;
+                friendUser = friendUsers[i];
+            }
+            addFriendsCard(friendUser);
+            updateFriendsCard(friendUser);
+        });
+
+    } catch(error) {
+        console.log(error);
+        return;
+    }
 }
 
 async function createRequestNotifications() {
     let new_requests = {};
     try {
-        new_requests = await getRequestNotifications();
+        new_requests = await getRequestNotifications(currentUser.storage);
+
+        console.log("requests");
+        console.log(new_requests);
 
         // make a notification for all the requests
+
         for(let webid in new_requests) {
-            if(requestNotificationExists(webid)) {
-                addRequestNotification(rqstr_webid);
+            if(!requestNotificationExists(webid)) {
+                addRequestNotification(webid);
             }
             if(new_requests[webid]) {
-                updateRequestNotification(rqstr_webid);
+                updateRequestNotification(webid);
             }
         } 
 
@@ -214,33 +283,46 @@ function addRequestNotification(webid) {
 
     let approve_button = li.querySelector("div>div>button");
 
+    // TODO: check code flow for when button is pressed (approve/revoke/requestNotification) access
     approve_button.addEventListener('click', async (event) => {
         let button = event.currentTarget;
         let webid_frnd = event.currentTarget.parentElement.parentElement.parentElement.id.split("_")[1];
+
+        //add loading bar
+        button.parentElement.parentElement.parentElement.querySelector(".progress").classList.remove("hidden");
+        button.classList.add("hidden");
+
+        let friend;
+        try {
+            friend = await createUserFromWebID(webid_frnd);
+        } catch(error) {
+            console.log(error);
+            return;
+        }
+
         // green button for accept, red button for decline/revoke
         if(button.classList.contains("green")) {
-            button.classList.add("hidden");
 
-            //add loading bar
-            button.parentElement.parentElement.parentElement.querySelector(".progress").classList.remove("hidden");
-
-            let friend;
             try {
-                friend = await createUserFromWebID(webid_frnd);
-                approveAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
+                await approveAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
             } catch(error) {
-                removeRequestNotification(webid_frnd);
+                removeRequestNotification(friend.webid);
+                console.log(error);
+            }
+
+        }
+        else {
+            try {
+                await revokeAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
+                removeRequestNotification(friend.webid);
+            } catch(error) {
+                removeRequestNotification(friend.webid);
                 console.log(error);
             }
         }
-        else {
-            await revokingPersonAccessfromACL(webid_frnd);
-            await removeAccessNotification(webid_frnd);
-
-            removeRequestNotification(webid_frnd);
-        }
     });
 
+    // add to dom
     requests_list.insertBefore(li, requests_list.firstChild);
 }
 
@@ -271,13 +353,13 @@ async function updateRequestNotification(webid) {
 
             // remove loading bar
             let bar = li.querySelector(".progress");
-            if(bar) {
-                bar.remove();
-            }
+            bar.classList.add("hidden");
         }        
     }
 }
 
+//TODO: make card show user info like name, img etc. and a status under it
+// TODO: when click on card go to location on the map
 function addFriendsCard(user) {
     let friends_list = document.getElementById('friends-list');
 
@@ -288,7 +370,7 @@ function addFriendsCard(user) {
         li.innerHTML =`
             <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
             <span class="title">${user.webid}</span>
-            <p>Location not shared</p>
+            <p>Awaiting approval</p>
             <div class="secondary-content collection-checkbox hidden">
                 <label>
                     <input type="checkbox" class="filled-in" checked="" />
@@ -326,9 +408,7 @@ function updateFriendsCard(user) {
 
             // remove loading bar
             let bar = li.querySelector(".progress");
-            if(bar) {
-                bar.remove();
-            }
+            bar.classList.add("hidden");
 
             // edit text
             let p = li.querySelector("p");
@@ -395,14 +475,6 @@ function addPostedLocationHistory(lat, long, timestamp) {
     collection.insertBefore(a, collection.firstChild);
 }
 
-function initMap() {
-    map.setView([0, 0], 3);
-    const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-    const tileURL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const tiles = L.tileLayer(tileURL, { attribution });
-    tiles.addTo(map);
-}
-
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -446,13 +518,13 @@ init();
 
 // handleRedirectAfterLogin();
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function myfetchFunction(url) {
-    return await solidfetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/sparql-update', 'Cache-Control': 'no-cache' },
-        credentials: 'include'
-    });
-}
+// async function myfetchFunction(url) {
+//     return await solidfetch(url, {
+//         method: 'GET',
+//         headers: { 'Content-Type': 'application/sparql-update', 'Cache-Control': 'no-cache' },
+//         credentials: 'include'
+//     });
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // TODO: crashes if data cannot be queried from webid
 // can not catch the error with try catch or .catch ???
@@ -469,37 +541,37 @@ async function myfetchFunction(url) {
 //     return (bindings[0].get('o').value);
 // }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function getStorageFromWebID(webid) {
-    var myEngine_getIssuer = new QueryEngine();
-    const bindingsStream = await myEngine_getIssuer.queryBindings(`
-  SELECT ?o WHERE {
-   ?s <http://www.w3.org/ns/pim/space#storage> ?o.
-  }`, {
-        sources: [`${webid}`],
-    });
-    const bindings = await bindingsStream.toArray();
-    return (bindings[0].get('o').value);
-}
+// async function getStorageFromWebID(webid) {
+//     var myEngine_getIssuer = new QueryEngine();
+//     const bindingsStream = await myEngine_getIssuer.queryBindings(`
+//   SELECT ?o WHERE {
+//    ?s <http://www.w3.org/ns/pim/space#storage> ?o.
+//   }`, {
+//         sources: [`${webid}`],
+//     });
+//     const bindings = await bindingsStream.toArray();
+//     return (bindings[0].get('o').value);
+// }
 
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function getDataFromWebID(webid) {
-    var myEngine_getData = new QueryEngine();
-    const bindingsStream = await myEngine_getData.queryBindings(`
-  SELECT ?img ?familyName ?givenName WHERE {
-  ?s <http://xmlns.com/foaf/0.1/img> ?img;
-  <http://xmlns.com/foaf/0.1/familyName> ?familyName;
-  <http://xmlns.com/foaf/0.1/givenName> ?givenName.
-  }`, {
-        sources: [`${webid}`],
-    });
-    const bindings = await bindingsStream.toArray();
-    if (bindings.length == 0) { //When the foaf:givenName and foaf:FamilyName is absent webid will be shown
-        return ([webid, '', ''])
-    }
-    else {
-        return ([bindings[0].get('givenName').value, bindings[0].get('familyName').value, bindings[0].get('img').value]);
-    }
-}
+// //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// async function getDataFromWebID(webid) {
+//     var myEngine_getData = new QueryEngine();
+//     const bindingsStream = await myEngine_getData.queryBindings(`
+//   SELECT ?img ?familyName ?givenName WHERE {
+//   ?s <http://xmlns.com/foaf/0.1/img> ?img;
+//   <http://xmlns.com/foaf/0.1/familyName> ?familyName;
+//   <http://xmlns.com/foaf/0.1/givenName> ?givenName.
+//   }`, {
+//         sources: [`${webid}`],
+//     });
+//     const bindings = await bindingsStream.toArray();
+//     if (bindings.length == 0) { //When the foaf:givenName and foaf:FamilyName is absent webid will be shown
+//         return ([webid, '', ''])
+//     }
+//     else {
+//         return ([bindings[0].get('givenName').value, bindings[0].get('familyName').value, bindings[0].get('img').value]);
+//     }
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -571,45 +643,45 @@ async function getDataFromWebID(webid) {
 //     }
 // }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function sendRequestAcceptedNotification(rqstr_webid) {
-    const rqstr_issuer = await getStorageFromWebID(rqstr_webid);
-    const query = `INSERT DATA {<${window.sessionStorage.getItem('webID_later')}> <http://tobeadded.com/GrantedAccessToLocation> <${container}>.}`;
-    // Send a PATCH request the pod url to inbox.ttl 
-    const response = await fetch(rqstr_issuer + 'public/YourLocationHistory/inbox.ttl', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-        body: query
-    });
-    if (300 < response.status && response.status < 600) {
-        console.log(` HTTP fetch Error code is ${response.status} Your friend may not have used our app yet!`)
-    }
-}
+// async function sendRequestAcceptedNotification(rqstr_webid) {
+//     const rqstr_issuer = await getStorageFromWebID(rqstr_webid);
+//     const query = `INSERT DATA {<${window.sessionStorage.getItem('webID_later')}> <http://tobeadded.com/GrantedAccessToLocation> <${container}>.}`;
+//     // Send a PATCH request the pod url to inbox.ttl 
+//     const response = await fetch(rqstr_issuer + 'public/YourLocationHistory/inbox.ttl', {
+//         method: 'PATCH',
+//         headers: { 'Content-Type': 'application/sparql-update' },
+//         body: query
+//     });
+//     if (300 < response.status && response.status < 600) {
+//         console.log(` HTTP fetch Error code is ${response.status} Your friend may not have used our app yet!`)
+//     }
+// }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-let response_data;
-async function addRequestingPersontoACL(webid_rqstr) {
+// let response_data;
+// async function addRequestingPersontoACL(webid_rqstr) {
 
-    const query_extra = `:Read
-        a acl:Authorization;
-        acl:accessTo D:;
-        acl:agent <${webid_rqstr}>;
-        acl:default D:;
-        acl:mode acl:Read.`;
-    // Send a GET and PUT request to update the source
-    const response = await solidfetch(container + '.acl', {
-        method: 'GET',
-        headers: { 'Content-Type': 'text/turtle' },
-    }).then(response_ => response_.text()).then(async (data) => {
-        response_data = data; if (!response_data.includes(query_extra)) {
-            const query = response_data + "\n" + query_extra;
-            const response_put = await solidfetch(container + '.acl', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'text/turtle' },
-                body: query
-            });
-        }
-    });
-    await sendRequestAcceptedNotification(webid_rqstr);
-}
+//     const query_extra = `:Read
+//         a acl:Authorization;
+//         acl:accessTo D:;
+//         acl:agent <${webid_rqstr}>;
+//         acl:default D:;
+//         acl:mode acl:Read.`;
+//     // Send a GET and PUT request to update the source
+//     const response = await solidfetch(container + '.acl', {
+//         method: 'GET',
+//         headers: { 'Content-Type': 'text/turtle' },
+//     }).then(response_ => response_.text()).then(async (data) => {
+//         response_data = data; if (!response_data.includes(query_extra)) {
+//             const query = response_data + "\n" + query_extra;
+//             const response_put = await solidfetch(container + '.acl', {
+//                 method: 'PUT',
+//                 headers: { 'Content-Type': 'text/turtle' },
+//                 body: query
+//             });
+//         }
+//     });
+//     await sendRequestAcceptedNotification(webid_rqstr);
+// }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // var myEngine_getNots = new QueryEngine();
 // let rqstr_webid_array = new Array();
@@ -650,107 +722,107 @@ async function addRequestingPersontoACL(webid_rqstr) {
 //     });
 // }
 //----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function revokingPersonAccessfromACL(rvk_aprvd_webid) {
-    const query_extra = `:Read
-        a acl:Authorization;
-        acl:accessTo D:;
-        acl:agent <${rvk_aprvd_webid}>;
-        acl:default D:;
-        acl:mode acl:Read.`;
-    // Send a GET and PUT request to update the source
-    const response = await solidfetch(container + '.acl', {
-        method: 'GET',
-        headers: { 'Content-Type': 'text/turtle' },
-    }).then(response_ => response_.text()).then(async (data) => {
-        response_data = data;
-        if (response_data.includes(query_extra)) {
-            const query = response_data.split(query_extra).join('\n');
-            const response_put = await solidfetch(container + '.acl', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'text/turtle' },
-                body: query
-            });
-        }
-    });
-    await deleteRequestAcceptedNotification(rvk_aprvd_webid);
-}
+// async function revokingPersonAccessfromACL(rvk_aprvd_webid) {
+//     const query_extra = `:Read
+//         a acl:Authorization;
+//         acl:accessTo D:;
+//         acl:agent <${rvk_aprvd_webid}>;
+//         acl:default D:;
+//         acl:mode acl:Read.`;
+//     // Send a GET and PUT request to update the source
+//     const response = await solidfetch(container + '.acl', {
+//         method: 'GET',
+//         headers: { 'Content-Type': 'text/turtle' },
+//     }).then(response_ => response_.text()).then(async (data) => {
+//         response_data = data;
+//         if (response_data.includes(query_extra)) {
+//             const query = response_data.split(query_extra).join('\n');
+//             const response_put = await solidfetch(container + '.acl', {
+//                 method: 'PUT',
+//                 headers: { 'Content-Type': 'text/turtle' },
+//                 body: query
+//             });
+//         }
+//     });
+//     await deleteRequestAcceptedNotification(rvk_aprvd_webid);
+// }
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function deleteRequestAcceptedNotification(rqstr_webid) {
-    const rqstr_issuer = await getStorageFromWebID(rqstr_webid);
-    const query = `DELETE DATA {<${window.sessionStorage.getItem('webID_later')}> <http://tobeadded.com/GrantedAccessToLocation> <${container}>.}`;
-    // Send a PATCH request the pod url to inbox.ttl 
-    const response = await fetch(rqstr_issuer + 'public/YourLocationHistory/inbox.ttl', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-        body: query
-    });
-    if (300 < response.status && response.status < 600) {
-        console.log(` HTTP fetch Error code is ${response.status}`);
-    }
-}
+// async function deleteRequestAcceptedNotification(rqstr_webid) {
+//     const rqstr_issuer = await getStorageFromWebID(rqstr_webid);
+//     const query = `DELETE DATA {<${window.sessionStorage.getItem('webID_later')}> <http://tobeadded.com/GrantedAccessToLocation> <${container}>.}`;
+//     // Send a PATCH request the pod url to inbox.ttl 
+//     const response = await fetch(rqstr_issuer + 'public/YourLocationHistory/inbox.ttl', {
+//         method: 'PATCH',
+//         headers: { 'Content-Type': 'application/sparql-update' },
+//         body: query
+//     });
+//     if (300 < response.status && response.status < 600) {
+//         console.log(` HTTP fetch Error code is ${response.status}`);
+//     }
+// }
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function approvedSentNotification(apprvd_rqstr_webid) {
-    const query = `DELETE DATA {<> <http://tobeadded.com/LocationRequestedBy> <${apprvd_rqstr_webid}>.}`;
-    // Send a PATCH request the pod url to names.ttl 
-    const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-        body: query
-    });
-    if (300 < response.status && response.status < 600) {
-        console.log("Your friend has not used our app yet or the entry could not be deleted!")
-    }
-    else {
-        const query = `INSERT DATA {<> <http://tobeadded.com/YouGrantedAccessTo> <${apprvd_rqstr_webid}>.}`;
-        // Send a PATCH request the pod url to names.ttl 
-        const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/sparql-update' },
-            body: query
-        });
-        if (300 < response.status && response.status < 600) {
-            console.log("Your friend has not used our app yet or the entry could not be deleted!")
-        }
-    }
-}
+// async function approvedSentNotification(apprvd_rqstr_webid) {
+//     const query = `DELETE DATA {<> <http://tobeadded.com/LocationRequestedBy> <${apprvd_rqstr_webid}>.}`;
+//     // Send a PATCH request the pod url to names.ttl 
+//     const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
+//         method: 'PATCH',
+//         headers: { 'Content-Type': 'application/sparql-update' },
+//         body: query
+//     });
+//     if (300 < response.status && response.status < 600) {
+//         console.log("Your friend has not used our app yet or the entry could not be deleted!")
+//     }
+//     else {
+//         const query = `INSERT DATA {<> <http://tobeadded.com/YouGrantedAccessTo> <${apprvd_rqstr_webid}>.}`;
+//         // Send a PATCH request the pod url to names.ttl 
+//         const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
+//             method: 'PATCH',
+//             headers: { 'Content-Type': 'application/sparql-update' },
+//             body: query
+//         });
+//         if (300 < response.status && response.status < 600) {
+//             console.log("Your friend has not used our app yet or the entry could not be deleted!")
+//         }
+//     }
+// }
 //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function removeAccessNotification(rm_rqstr_webid) {
-    const query = `DELETE DATA {<> <http://tobeadded.com/YouGrantedAccessTo> <${rm_rqstr_webid}>.}`;
-    // Send a PATCH request the pod url to names.ttl 
-    const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-        body: query
-    });
-    if (300 < response.status && response.status < 600) {
-        console.log("Your friend has not used our app yet or the entry could not be deleted!")
-    }
-}
+// async function removeAccessNotification(rm_rqstr_webid) {
+//     const query = `DELETE DATA {<> <http://tobeadded.com/YouGrantedAccessTo> <${rm_rqstr_webid}>.}`;
+//     // Send a PATCH request the pod url to names.ttl 
+//     const response = await fetch(container.split("/Data/")[0] + "/inbox.ttl", {
+//         method: 'PATCH',
+//         headers: { 'Content-Type': 'application/sparql-update' },
+//         body: query
+//     });
+//     if (300 < response.status && response.status < 600) {
+//         console.log("Your friend has not used our app yet or the entry could not be deleted!")
+//     }
+// }
 //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-var myEngine_getURLs = new QueryEngine();
-async function getAccessGrantedNotifications() {
-    let lctn_container = new Array();
-    let acptr_webid = new Array();
-    const file = container.split('Data')[0] + 'inbox.ttl';
-    const bindingsStream = await myEngine_getURLs.queryBindings(`
-    SELECT ?acptr_webid ?lctn_container WHERE {
-           ?acptr_webid  <http://tobeadded.com/GrantedAccessToLocation> ?lctn_container.
-    }`, {
-        sources: [`${file}`],
-        fetch: myfetchFunction,
-    });
-    myEngine_getURLs.invalidateHttpCache();
-    const bindings = await bindingsStream.toArray();
-    bindings.forEach((element1, element2) => { acptr_webid.push(element1.get('acptr_webid').value), lctn_container.push(element1.get('lctn_container').value) });
-    return { acptr_webid, lctn_container };
-}
+// var myEngine_getURLs = new QueryEngine();
+// async function getAccessGrantedNotifications() {
+//     let lctn_container = new Array();
+//     let acptr_webid = new Array();
+//     const file = container.split('Data')[0] + 'inbox.ttl';
+//     const bindingsStream = await myEngine_getURLs.queryBindings(`
+//     SELECT ?acptr_webid ?lctn_container WHERE {
+//            ?acptr_webid  <http://tobeadded.com/GrantedAccessToLocation> ?lctn_container.
+//     }`, {
+//         sources: [`${file}`],
+//         fetch: myfetchFunction,
+//     });
+//     myEngine_getURLs.invalidateHttpCache();
+//     const bindings = await bindingsStream.toArray();
+//     bindings.forEach((element1, element2) => { acptr_webid.push(element1.get('acptr_webid').value), lctn_container.push(element1.get('lctn_container').value) });
+//     return { acptr_webid, lctn_container };
+// }
 //-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function fetchWebid_Container(acptr_webid, lctn_container) {
-    acptr_webid.forEach(async (element1, index) => {
-        const element2 = lctn_container[index];
-        await getLatLongofFriend(element1, element2);
-    });
-}
+// async function fetchWebid_Container(acptr_webid, lctn_container) {
+//     acptr_webid.forEach(async (element1, index) => {
+//         const element2 = lctn_container[index];
+//         await getLatLongofFriend(element1, element2);
+//     });
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // async function fetchLocations() {
 //     window.setInterval(
@@ -772,49 +844,10 @@ async function GetCoordinates() {
 
             addPostedLocationHistory(position.coords.latitude, position.coords.longitude, position.timestamp);
 
-            marker.setLatLng([position.coords.latitude, position.coords.longitude]);
+            // marker.setLatLng([position.coords.latitude, position.coords.longitude]);
 
-            const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
-        @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
-        @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
-        @prefix plh: <https://w3id.org/personallocationhistory#> .
-        @prefix tm: <https://w3id.org/transportmode#> .
-        @prefix geo: <http://www.opengis.net/ont/geosparql#>.
-        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-
-        <${navigator.platform.split(" ").join('')}> a sosa:Platform;
-        sosa:hosts <locationSensor>.
-
-        <locationSensor> a sosa:Sensor;
-        sosa:madeObservation <>;
-        sosa:observes <location>;
-        sosa:isHostedBy <${navigator.platform.split(" ").join('')}>.
-
-        <> a sosa:Observation;
-        sosa:observedProperty <location> ;
-        sosa:hasResult <_result>;
-        sosa:featureOfInterest <${window.sessionStorage.getItem('webID_later')}> ;
-        sosa:hasSimpleResult "POINT(${position.coords.longitude} ${position.coords.latitude})"^^geo:wktLiteral ;
-        sosa:madeBySensor <locationSensor>;
-        sosa:resultTime "${new Date(Number(position.timestamp)).toISOString()}"^^xsd:dateTime.
-
-        <_result> a sosa:Result;
-        wgs84:long ${position.coords.longitude};
-        wgs84:lat ${position.coords.latitude}.
-
-        <location> a sosa:ObservableProperty;
-        rdfs:label "Location"@en .
-
-        <${window.sessionStorage.getItem('webID_later')}> a sosa:FeatureOfInterest.        `
-            // const query = `<> <https://schema.org/latitude> "${position.coords.latitude}";<https://schema.org/longitude> "${position.coords.longitude}";<http://purl.org/dc/terms/created> "${position.timestamp}".`
-
-            // Send a PUT request to post to the source
-            const response = await solidfetch(container + `${position.timestamp}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'text/turtle' },
-                body: query,
-                credentials: 'include'
-            });
+            const platform = navigator.platform.split(" ").join('');
+            await putNewLocation(currentUser.webid, currentUser.storage, {lat: position.coords.latitude, long: position.coords.longitude, timestamp: position.timestamp}, platform);
 
         }, async function error() {
             document.querySelector('#status').textContent = 'Unable to retrieve your location';
@@ -822,98 +855,96 @@ async function GetCoordinates() {
     }
 };
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function test(friend_container) {
-    var myEngine = new QueryEngine();
-    // Fetch the latest timestamp  
-    let bindingsStream;
-    try {
-        bindingsStream = await myEngine.queryBindings(`
-        SELECT (STRAFTER(?fileName, "/YourLocationHistory/Data/") AS ?tmstmp) 
-        WHERE {
-          ?s <http://www.w3.org/ns/ldp#contains> ?name .
-          BIND (STR(?name) AS ?fileName)
-        }
-        ORDER BY DESC(?tmstmp)`, {
-            sources: [`${friend_container}`],
-            fetch: myfetchFunction,
-            httpIncludeCredentials: true
-        });
-        myEngine.invalidateHttpCache();
+// async function test(friend_container) {
+//     var myEngine = new QueryEngine();
+//     // Fetch the latest timestamp  
+//     let bindingsStream;
+//     try {
+//         bindingsStream = await myEngine.queryBindings(`
+//         SELECT (STRAFTER(?fileName, "/YourLocationHistory/Data/") AS ?tmstmp) 
+//         WHERE {
+//           ?s <http://www.w3.org/ns/ldp#contains> ?name .
+//           BIND (STR(?name) AS ?fileName)
+//         }
+//         ORDER BY DESC(?tmstmp)`, {
+//             sources: [`${friend_container}`],
+//             fetch: myfetchFunction,
+//             httpIncludeCredentials: true
+//         });
+//         myEngine.invalidateHttpCache();
 
 
-        // Consume results as an array (easier)
-        const bindings = await bindingsStream.toArray();
-        const tmstmp = bindings[0].get('tmstmp').value;
-        //---------------------------------------------------------------------------------------
-        //Fetch the lat-long from the file corresponding to the latest timestamp
-        const bindingsStream_1 = await myEngine.queryBindings(`
-      SELECT ?lat ?long WHERE {
-      ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
-         <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
-      }`, {
-            sources: [`${friend_container}${bindings[0].get('tmstmp').value}`],
-            fetch: myfetchFunction,
-            httpIncludeCredentials: true
-        });
+//         // Consume results as an array (easier)
+//         const bindings = await bindingsStream.toArray();
+//         const tmstmp = bindings[0].get('tmstmp').value;
+//         //---------------------------------------------------------------------------------------
+//         //Fetch the lat-long from the file corresponding to the latest timestamp
+//         const bindingsStream_1 = await myEngine.queryBindings(`
+//       SELECT ?lat ?long WHERE {
+//       ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+//          <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
+//       }`, {
+//             sources: [`${friend_container}${bindings[0].get('tmstmp').value}`],
+//             fetch: myfetchFunction,
+//             httpIncludeCredentials: true
+//         });
 
-        const bindings_1 = await bindingsStream_1.toArray();
+//         const bindings_1 = await bindingsStream_1.toArray();
 
-        //Return the latest Latitude and Longitude:
-        const lat_long_list = [bindings_1[0].get('lat').value, bindings_1[0].get('long').value];
-        let loc_array = [lat_long_list, tmstmp]
-        return (loc_array);
-    } catch (error) {
-        //Once the friend revoke's access to the location data container, The Lat Long fetch will stop this is to try catch that
-        // console.log("This is the error",error);//All actors rejected their test in urn:comunica:default:rdf-join/mediators#main
-        // console.log("This is the error on container:",friend_container);
-    }
-}
+//         //Return the latest Latitude and Longitude:
+//         const lat_long_list = [bindings_1[0].get('lat').value, bindings_1[0].get('long').value];
+//         let loc_array = [lat_long_list, tmstmp]
+//         return (loc_array);
+//     } catch (error) {
+//         //Once the friend revoke's access to the location data container, The Lat Long fetch will stop this is to try catch that
+//         // console.log("This is the error",error);//All actors rejected their test in urn:comunica:default:rdf-join/mediators#main
+//         // console.log("This is the error on container:",friend_container);
+//     }
+// }
 //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//Variables for open-street Map
-const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const tileURL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const tiles = L.tileLayer(tileURL, { attribution });
-tiles.addTo(map);
+// //Variables for open-street Map
+// const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+// const tileURL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+// const tiles = L.tileLayer(tileURL, { attribution });
+// tiles.addTo(map);
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-async function getLatLongofFriend(friend_webid, friend_container) {
-    let data_array = await getDataFromWebID(friend_webid);
-    const loc_array = await test(friend_container);
-    const lat_long_list = loc_array[0];
-    const tmstmp_ = loc_array[1];
-    if (lat_long_list) {
-        map.eachLayer(function (layer) {
-            if (layer._content) {
-                if (layer._content.split('\r\n')[0] == data_array[0] + ` ${data_array[1]}`) {
-                    // console.log(`removing _tooltip: ${layer}`);
-                    map.removeLayer(layer);
-                }
-            }
-            if (layer._tooltipHandlersAdded) {
-                if (layer._tooltip._content.split('\r\n')[0] == data_array[0] + ` ${data_array[1]}`) {
-                    // console.log(`removing marker: ${layer}`);
-                    map.removeLayer(layer);
-                }
-            }
-        });
-        let friendMarker;
-        if (data_array[2] == '') {//If the user doesn't have the foaf:img triple
-            friendMarker = L.marker(lat_long_list);
-        }
-        else {
-            var friend_image = L.icon({
-                iconUrl: data_array[2],
-                iconSize: [30, 30], // size of the icon
-                iconAnchor: [15, 15] // point of the icon which will correspond to marker's location
-            });
-            friendMarker = L.marker(lat_long_list, { icon: friend_image });
-        }
-        friendMarker.addTo(map);
-        friendMarker._icon.classList.add("huechange");
-        friendMarker.bindTooltip(data_array[0] + ` ${data_array[1]}` + `\r\n Last seen at ${new Date(Number(tmstmp_)).toLocaleString()}`).openTooltip();
-
-        updateFriendsCard(friend_webid);
-    }
-}
+// async function getLatLongofFriend(friend_webid, friend_container) {
+//     let data_array = await getDataFromWebID(friend_webid);
+//     const loc_array = await test(friend_container);
+//     const lat_long_list = loc_array[0];
+//     const tmstmp_ = loc_array[1];
+//     if (lat_long_list) {
+//         map.eachLayer(function (layer) {
+//             if (layer._content) {
+//                 if (layer._content.split('\r\n')[0] == data_array[0] + ` ${data_array[1]}`) {
+//                     // console.log(`removing _tooltip: ${layer}`);
+//                     map.removeLayer(layer);
+//                 }
+//             }
+//             if (layer._tooltipHandlersAdded) {
+//                 if (layer._tooltip._content.split('\r\n')[0] == data_array[0] + ` ${data_array[1]}`) {
+//                     // console.log(`removing marker: ${layer}`);
+//                     map.removeLayer(layer);
+//                 }
+//             }
+//         });
+//         let friendMarker;
+//         if (data_array[2] == '') {//If the user doesn't have the foaf:img triple
+//             friendMarker = L.marker(lat_long_list);
+//         }
+//         else {
+//             var friend_image = L.icon({
+//                 iconUrl: data_array[2],
+//                 iconSize: [30, 30], // size of the icon
+//                 iconAnchor: [15, 15] // point of the icon which will correspond to marker's location
+//             });
+//             friendMarker = L.marker(lat_long_list, { icon: friend_image });
+//         }
+//         friendMarker.addTo(map);
+//         friendMarker._icon.classList.add("huechange");
+//         friendMarker.bindTooltip(data_array[0] + ` ${data_array[1]}` + `\r\n Last seen at ${new Date(Number(tmstmp_)).toLocaleString()}`).openTooltip();
+//     }
+// }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // async function giveAccessoftheContainertoOwner() {
 //     const response = await solidfetch(container + '.acl', {
