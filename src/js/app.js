@@ -3,8 +3,9 @@ import "./../scss/app.scss";
 
 import "leaflet";
 
-// TODO: create seprate functions for the event handlers
+import { User } from "./models/user"
 
+// services import
 import { createUserFromWebID } from "./services/webid";
 import { loginUser, handleRedirectAfterLogin } from "./services/authenticate";
 import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap } from "./services/map";
@@ -21,20 +22,21 @@ import {
     putNewLocation
 } from "./services/locationHistory";
 
+// ui elements imports
+import { addFriendsCard, updateFriendsCard, removeFriendsCard } from "./ui/card";
+import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, setLoginLoadingMessage, setLoginMessage } from "./ui/login";
+import { displayRequestLocationLoading, hideRequestLocationLoading, setRequestLocationMessage } from "./ui/requestLocation"
+import { addRequestNotification, removeRequestNotification, requestNotificationExists, updateRequestNotification } from "./ui/requestNotification"
+
 var locator;
 
 let first_time = true;
 let posting_loc = false;
-let login_button, post_location_button, req_frnd_button;
+
 let currentUser;
 let friendUsers = [];
 
 async function init() {
-    // initialize variables for DOM objects
-    login_button = document.getElementById('webid-login');
-    post_location_button = document.getElementById('start-posting');
-    req_frnd_button = document.getElementById('req-frnd');
-
     addEventListeners();
 
     // checks if the user is logged in and starts the mainloop
@@ -44,77 +46,140 @@ async function init() {
 }
 
 function addEventListeners() {
-    login_button.addEventListener('click', async () => {
 
-        setLoginLoadingMessage("Getting user info from webID...");
-        displayLoginLoadingScreen();
+    // login button
+    document.getElementById('webid-login').addEventListener('click', onLoginClick);
 
-        try {
-            let webid = document.getElementById('webid').value;
-            webid = webid.trim();
-            if(!webid) throw new Error("WebID is invalid");
-            currentUser = await createUserFromWebID(webid);
-            
-            setLoginLoadingMessage("Logging in to Solid client...");
-            await loginUser(currentUser);
-            
-            // check handleRedirectAfterLogin for further steps
-        } catch(error) {
-            hideLoginLoadingScreen();
-            setLoginMessage(error.message);
-        } finally {
-            hideLoginLoadingScreen();
-        }
-    });
+    // post location button
+    document.getElementById('start-posting').addEventListener('click', onPostLocationClick);
 
-    post_location_button.addEventListener('click', async () => {
-        // TODO: if user is logged in check
-        // TODO: update this func
-        if(!posting_loc) {
-            posting_loc = true;
+    // request locatin from webid button
+    document.getElementById('req-frnd').addEventListener('click', onRequestLocationClick);
 
-            startPostingLocations();
-            
-            post_location_button.textContent = "Stop posting loc";
-            post_location_button.classList.remove('green');
-            post_location_button.classList.add('red');
-        } else {
-            posting_loc = false;
-            navigator.geolocation.clearWatch(locator);
-            post_location_button.textContent = "Post Location History";
-            post_location_button.classList.add('green');
-            post_location_button.classList.remove('red');
-        }
+}
+
+async function onLoginClick(event) {
+    setLoginLoadingMessage("Getting user info from webID...");
+    displayLoginLoadingScreen();
+
+    try {
+        let webid = document.getElementById('webid').value;
+        webid = webid.trim();
+        if(!webid) throw new Error("WebID is invalid");
+        currentUser = await createUserFromWebID(webid);
         
-    });
+        setLoginLoadingMessage("Logging in to Solid client...");
+        await loginUser(currentUser);
+        
+        // check handleRedirectAfterLogin for further steps
+    } catch(error) {
+        hideLoginLoadingScreen();
+        setLoginMessage(error.message);
+    } finally {
+        hideLoginLoadingScreen();
+    }
+}
 
-    req_frnd_button.addEventListener('click', async () => {
+async function onCheckboxChange(event) {
+    // get the friend user and create/remove the marker based on checked status
+    const i = friendUsers.findIndex(f => f.webid == event.currentTarget.webid);
+    if(i >= 0) {
+        if(event.currentTarget.checked) {
+            friendUsers[i].showLocation = true;
+            let loc = friendUsers[i].locations.length > 0 ? friendUsers[i].locations[friendUsers[i].locations.length - 1] : null;
+            createMarkerFromUser(loc, friendUsers[i]);
+        } else {
+            friendUsers[i].showLocation = false;
+            removeMarkerFromUser(friendUsers[i]);
+        }
+    }
+}
 
-        setReqMessage("");
-        displayRequestLoading();
+async function onPostLocationClick(event) {
+    // TODO: if user is logged in check
+    // TODO: update this func
+    if(!posting_loc) {
+        posting_loc = true;
+
+        startPostingLocations();
+        
+        event.currentTarget.textContent = "Stop posting loc";
+        event.currentTarget.classList.remove('green');
+        event.currentTarget.classList.add('red');
+    } else {
+        posting_loc = false;
+
+        stopPostingLocations();
+
+        event.currentTarget.textContent = "Post Location History";
+        event.currentTarget.classList.add('green');
+        event.currentTarget.classList.remove('red');
+        }
+}
+
+async function onRequestLocationClick(event) {
+    setRequestLocationMessage("");
+    displayRequestLocationLoading();
+
+    try {
+        let webid_frnd = document.getElementById('friend-webid').value;
+        if(!webid_frnd) throw new Error("Invalid WebID");
+
+        // create user object with available info in pod
+        let friendUser = await createUserFromWebID(webid_frnd);
+        friendUsers.push(friendUser);
+
+        await sendNotification(currentUser.webid, friendUser.storage);
+
+
+        addFriendsCard(friendUser, onCheckboxChange);
+
+    } catch(error) {
+        setRequestLocationMessage(error.message);
+    } finally {
+        hideRequestLocationLoading();
+    }
+
+    hideRequestLocationLoading();
+}
+
+// TODO: check code flow for when button is pressed (approve/revoke/requestNotification) access
+async function onApproveButtonClick(event) {
+    let button = event.currentTarget;
+    let webid_frnd = event.currentTarget.webid;
+
+    //add loading bar
+    button.parentElement.parentElement.parentElement.querySelector(".progress").classList.remove("hidden");
+    button.classList.add("hidden");
+
+    let friend;
+    try {
+        friend = await createUserFromWebID(webid_frnd);
+    } catch(error) {
+        console.log(error);
+        return;
+    }
+
+    // green button for accept, red button for decline/revoke
+    if(button.classList.contains("green")) {
 
         try {
-            let webid_frnd = document.getElementById('friend-webid').value;
-            if(!webid_frnd) throw new Error("Invalid WebID");
-
-            // create user object with available info in pod
-            let friendUser = await createUserFromWebID(webid_frnd);
-            friendUsers.push(friendUser);
-
-            await sendNotification(currentUser.webid, friendUser.storage);
-
-
-            addFriendsCard(friendUser);
-
+            await approveAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
         } catch(error) {
-            setReqMessage(error.message);
-        } finally {
-            hideRequestLoading();
+            removeRequestNotification(friend.webid);
+            console.log(error);
         }
 
-        hideRequestLoading();
-    });
-
+    }
+    else {
+        try {
+            await revokeAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
+            removeRequestNotification(friend.webid);
+        } catch(error) {
+            removeRequestNotification(friend.webid);
+            console.log(error);
+        }
+    }
 }
 
 // checks if the user is logged in and starts the mainloop
@@ -240,7 +305,7 @@ async function updateFriendsAccessRights() {
                 friendUsers[i].hasAccess = true;
                 friendUser = friendUsers[i];
             }
-            addFriendsCard(friendUser);
+            addFriendsCard(friendUser, onCheckboxChange);
             updateFriendsCard(friendUser);
         }
 
@@ -262,7 +327,7 @@ async function createRequestNotifications() {
 
         for(let webid in new_requests) {
             if(!requestNotificationExists(webid)) {
-                addRequestNotification(webid);
+                addRequestNotification(webid, onApproveButtonClick);
             }
             if(new_requests[webid]) {
                 updateRequestNotification(webid);
@@ -273,228 +338,6 @@ async function createRequestNotifications() {
     } catch(error) {
         console.log(error);
     }   
-}
-
-function requestNotificationExists(webid) {
-    return document.getElementById("req_" + webid) ? true : false;
-}
-
-function addRequestNotification(webid) {
-    let requests_list = document.querySelector('#requests>.collection');
-    let li = document.createElement('li');
-    li.className = "collection-item";
-    li.id = "req_" + webid;
-    li.innerHTML = `
-    <div>
-    ${webid}
-        <div class="secondary-content">
-            <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
-                <span class="material-symbols-outlined">
-                    done
-                </span>
-            </button>
-        </div>
-    </div>
-    <div class="progress hidden">
-        <div class="indeterminate"></div>
-    </div>
-    `;
-
-    let approve_button = li.querySelector("div>div>button");
-
-    // TODO: check code flow for when button is pressed (approve/revoke/requestNotification) access
-    approve_button.addEventListener('click', async (event) => {
-        let button = event.currentTarget;
-        let webid_frnd = event.currentTarget.parentElement.parentElement.parentElement.id.split("_")[1];
-
-        //add loading bar
-        button.parentElement.parentElement.parentElement.querySelector(".progress").classList.remove("hidden");
-        button.classList.add("hidden");
-
-        let friend;
-        try {
-            friend = await createUserFromWebID(webid_frnd);
-        } catch(error) {
-            console.log(error);
-            return;
-        }
-
-        // green button for accept, red button for decline/revoke
-        if(button.classList.contains("green")) {
-
-            try {
-                await approveAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
-            } catch(error) {
-                removeRequestNotification(friend.webid);
-                console.log(error);
-            }
-
-        }
-        else {
-            try {
-                await revokeAccess(currentUser.webid, currentUser.storage, friend.webid, friend.storage);
-                removeRequestNotification(friend.webid);
-            } catch(error) {
-                removeRequestNotification(friend.webid);
-                console.log(error);
-            }
-        }
-    });
-
-    // add to dom
-    requests_list.insertBefore(li, requests_list.firstChild);
-}
-
-async function removeRequestNotification(webid) {
-    let li = document.getElementById("req_" + webid);
-    if(li) {
-        li.remove();
-    }
-}
-
-async function updateRequestNotification(webid) {
-    let li = document.getElementById("req_" + webid);
-
-    if(li) {
-        let approve_button = li.querySelector("div>div>button");
-        if(approve_button && approve_button.classList.contains('green')) {
-            // add X button
-            // <button class="waves-effect waves-light btn-small btn-symbol green darken-2">
-            //             <span class="material-symbols-outlined">
-            //                 done
-            //             </span>
-            //         </button>
-            
-            approve_button.classList.add('red');
-            approve_button.classList.remove('green');
-            approve_button.firstElementChild.textContent = "close";
-            approve_button.classList.remove("hidden");
-
-            // remove loading bar
-            let bar = li.querySelector(".progress");
-            bar.classList.add("hidden");
-        }        
-    }
-}
-
-// TODO: make card show user info like name, img etc. and a status under it
-// TODO: when click on card go to location on the map
-function addFriendsCard(user) {
-    let friends_list = document.getElementById('friends-list');
-
-    if(friends_list && document.getElementById("card_" + user.webid) === null) {
-        let li = document.createElement('li');
-        li.id = "card_" + user.webid;
-        li.className = "collection-item avatar";
-        li.innerHTML =`
-            <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
-            <span class="title">${user.name}</span>
-            <p>Awaiting approval</p>
-            <div class="secondary-content collection-checkbox hidden">
-                <label>
-                    <input type="checkbox" class="filled-in" checked="" />
-                    <span></span>
-                </label>
-            </div>
-            <div class="progress">
-                <div class="indeterminate"></div>
-            </div>
-        `;
-
-        friends_list.insertBefore(li, friends_list.firstChild);
-
-        let checkbox = li.querySelector("div>label>input");
-        checkbox.webid = user.webid;
-        checkbox.addEventListener('change', async (e) => {
-
-            // get the friend user and create/remove the marker based on checked status
-            const i = friendUsers.findIndex(f => f.webid == e.currentTarget.webid);
-            if(i >= 0) {
-                if(e.currentTarget.checked) {
-                    friendUsers[i].showLocation = true;
-                    let loc = friendUsers[i].locations.length > 0 ? friendUsers[i].locations[friendUsers[i].locations.length - 1] : null;
-                    createMarkerFromUser(loc, friendUsers[i]);
-                } else {
-                    friendUsers[i].showLocation = false;
-                    removeMarkerFromUser(friendUsers[i]);
-                }
-            }
-        });
-    }
-}
-
-function updateFriendsCard(user) {
-    let friends_list = document.getElementById('friends-list');
-    let li =  document.getElementById("card_" + user.webid);
-
-    if(friends_list && li) {
-        let checkbox_container = li.querySelector("div.collection-checkbox");
-        if(checkbox_container && checkbox_container.classList.contains("hidden")) {
-            // show checkbox
-            checkbox_container.classList.remove("hidden");
-
-            // remove loading bar
-            let bar = li.querySelector(".progress");
-            bar.classList.add("hidden");
-
-            // edit text
-            let p = li.querySelector("p");
-            if(p) {
-
-                if(user.hasAccess) {
-                    p.innerText = "Shared location";
-                } else {
-                    p.innerText = "No access";
-                }
-            }
-        }
-    }
-}
-
-function removeFriendsCard(user) {
-    let li = document.getElementById("card_" + user.webid);
-    if(li) {
-        li.remove();
-    }
-}
-
-function setLoginMessage(text) {
-    let login_message = document.getElementById('login-message');
-    login_message.textContent = text;
-    login_message.classList.remove("invisible");
-}
-
-function setLoginLoadingMessage(text) {
-    let login_loading_message = document.getElementById("login-loading-message");
-    login_loading_message.textContent = text;
-}
-
-function displayLoginLoadingScreen() {
-    document.getElementById("login-loading").classList.remove("hidden");
-    document.getElementById("login-content").classList.add("invisible");
-}
-
-function hideLoginLoadingScreen() {
-    document.getElementById("login-loading").classList.add("hidden");
-    document.getElementById("login-content").classList.remove("invisible");
-}
-
-function displayRequestLoading() {
-    document.querySelector("#friends > div > div.progress").classList.remove("invisible");
-}
-
-function hideRequestLoading() {
-    document.querySelector("#friends > div > div.progress").classList.add("invisible");
-}
-
-function setReqMessage(text) {
-    let req_message = document.getElementById('req-message');
-    req_message.textContent = text;
-    req_message.classList.remove("hidden");
-}
-
-function hideLoginScreen() {
-    document.getElementById('login').classList.add('hidden');
 }
 
 // TODO: make the link move this map to the location & clean up look
@@ -527,6 +370,10 @@ async function startPostingLocations() {
     } else {
         // TODO: show message posting location is not possible
     }
+}
+
+function stopPostingLocations() {
+    navigator.geolocation.clearWatch(locator);
 }
 
 function sleep(ms) {
