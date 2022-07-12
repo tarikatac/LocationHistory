@@ -7,6 +7,7 @@ export class User {
     familyName;
     img;
     hasAccess = false;
+    showLocation = true;
 
     // {
     //     lat,
@@ -18,5 +19,18 @@ export class User {
     constructor(webid) {
         this.webid = webid;
         
+    }
+
+    // returns the name if exists else the webid
+    get name() {
+        if(this.givenName && this.familyName) {
+            return this.givenName + " " + this.familyName;
+        } else if (this.givenName) {
+            return this.givenName;
+        } else if (this.familyName) {
+            return this.familyName;
+        } else {
+            return this.webid;
+        }
     }
 }

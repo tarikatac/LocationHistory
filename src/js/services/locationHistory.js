@@ -1,4 +1,3 @@
-//TODO: add location history logic here
 import { fetch as solidfetch } from "@inrupt/solid-client-authn-browser";
 
 // query engine gives error when invalid source is used. fix:
