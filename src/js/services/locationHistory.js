@@ -29,9 +29,8 @@ export async function createInbox(user_storage) {
             headers: { 'Content-Type': 'text/turtle' },
             credentials: 'include'
         });
-
     } catch (error) {
-        throw new Error("Error trying to fetch inbox.ttl");
+        throw new Error("Could not access pim:storage");
     }
 
     if (300 < response_.status && response_.status < 500) {
@@ -46,11 +45,11 @@ export async function createInbox(user_storage) {
                 credentials: 'include'
             });
         } catch (error) {
-            throw new Error("Error trying to fetch inbox.ttl");
+            throw new Error("Could not access pim:storage");
         }
 
         if (response.status >= 400) {
-            throw new Error("Could not create inbox.ttl");
+            throw new Error("Could not create inbox.ttl, check pim:storage");
         }
     }
 }

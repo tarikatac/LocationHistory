@@ -30,8 +30,33 @@
 			<div id="login-box" class="center-align">
 				<div id="login-content">
 					<h4>Login with webID</h4>
-					<p>Log in using your webid! e.g. https://data.knows.idlab.ugent.be/person/SindhuVasireddy/#me</p>
-					<input type="text" id="webid" class="" placeholder="Enter your webID">
+					<div id="login-input">
+						<p>Log in using your webid! e.g. https://data.knows.idlab.ugent.be/person/SindhuVasireddy/#me</p>
+						<input type="text" id="webid" class="" placeholder="Enter your webID">
+					</div>
+					<div id="login-input-extra" class="hidden">
+						<table class="options-table striped">
+							<tbody>
+								<tr>
+									<td>
+										<p>solid:oidcIssuer</p>
+									</td>
+									<td>
+										<input type="text" id="oidcIssuer" class="" placeholder="solid:oidcIssuer">
+									</td>
+								</tr>
+								<tr>
+									<td>
+										<p>pim:storage</p>
+									</td>
+									<td>
+										<input type="text" id="storage" class="" placeholder="pim:storage">
+									</td>
+								</tr>
+							</tbody>
+
+						</table>
+					</div>
 					<button id="webid-login" class="waves-effect waves-light btn">Login</button>
 					<p id="login-message" class="invisible error-msg">error</p>
 				</div>
@@ -85,14 +110,19 @@
 					<!-- <li id="card_webid" class="collection-item avatar">
 						<i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
 						<span class="title">Name</span>
-      					<p>Pending request</p>
-						<div class="secondary-content collection-checkbox hidden">
+      					<p class="error-font">Pending request</p>
+						<div class="collection-checkbox">
 							<label>
 								<input type="checkbox" class="filled-in" checked="checked" />
 								<span></span>
 							</label>
 						</div>
-						<div class="progress">
+						<div class="user-options-button">
+							<span class="material-symbols-outlined grey-text text-darken-2">
+								more_vert
+							</span>
+						</div>
+						<div class="progress hidden">
 							<div class="indeterminate"></div>
 						</div>
 					</li> -->
@@ -110,6 +140,58 @@
 
 		<section id="map-section">
 			<div id="map"></div>
+			<div id="user-menu" class="hidden">
+				<div id="user-menu-close-button">
+					<span class="material-symbols-outlined grey-text text-darken-2">
+						close
+					</span>
+				</div>
+				<h1 id="user-options-name">user name</h1>
+				<table id="user-options" class="options-table striped">
+					<tbody>
+						<tr>
+							<td colspan="2" class="center-align">
+								<p id="user-options-error" class="error-font">Press update to apply changes</p>
+							</td>
+						</tr>
+						<tr>
+							<td>
+								<p>WebID</p>
+							</td>
+							<td>
+								<div id="user-options-webid" class="scrollable">
+									webidwebidwebidwebidwebidwebidwebidwebidwebid
+								</div>
+							</td>
+						</tr>
+						<tr>
+							<td>
+								solid:oidcIssuer
+							</td>
+							<td>
+								<input type="text" id="user-options-oidcIssuer" class="" placeholder="solid:oidcIssuer">
+							</td>
+						</tr>
+						<tr>
+							<td>
+								pim:storage
+							</td>
+							<td>
+								<input type="text" id="user-options-storage" class="" placeholder="pim:storage">
+							</td>
+						</tr>
+						<tr>
+							<td class="center-align">
+								<button id="user-options-update" class="btn-small green darken-2">Update</button>
+							</td>
+							<td class="center-align">
+								<button id="user-options-delete" class="btn-small red darken-2">Delete</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+						  
+			</div>
 		</section>
 
 

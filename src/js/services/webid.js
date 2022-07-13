@@ -30,7 +30,7 @@ export async function getIssuerFromWebID(webid) {
         return null;
 
     } catch(error) {
-        throw new Error('Error retrieving solid:oidcIssuer');
+        throw new Error('Cannot reach WebID');
     }
 }
 
@@ -53,7 +53,7 @@ export async function getStorageFromWebID(webid) {
         return null;
 
     } catch(error) {
-        throw new Error('Error retrieving pim:storage');
+        throw new Error('Cannot reach WebID');
     }
 }
 

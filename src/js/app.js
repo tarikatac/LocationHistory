@@ -6,8 +6,8 @@ import "leaflet";
 import { User } from "./models/user"
 
 // services import
-import { createUserFromWebID } from "./services/webid";
-import { loginUser, handleRedirectAfterLogin } from "./services/authenticate";
+import { createUserFromWebID, getIssuerFromWebID, getStorageFromWebID, getUserDataFromWebID } from "./services/webid";
+import { loginUser, handleRedirectAfterLogin, isLoggedIn, logoutUser } from "./services/authenticate";
 import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap } from "./services/map";
 import { 
     createInbox,
@@ -24,9 +24,10 @@ import {
 
 // ui elements imports
 import { addFriendsCard, updateFriendsCard, removeFriendsCard } from "./ui/card";
-import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, setLoginLoadingMessage, setLoginMessage } from "./ui/login";
+import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, setLoginLoadingMessage, setLoginMessage, displayExtraLogin, hideExtraLogin } from "./ui/login";
 import { displayRequestLocationLoading, hideRequestLocationLoading, setRequestLocationMessage } from "./ui/requestLocation"
 import { addRequestNotification, removeRequestNotification, requestNotificationExists, updateRequestNotification } from "./ui/requestNotification"
+import { displayUserMenu, hideUserMenu, initUserMenu } from "./ui/userMenu";
 
 var locator;
 
@@ -43,6 +44,8 @@ async function init() {
     handleRedirect();
 
     initMap();
+
+    initUserMenu();
 }
 
 function addEventListeners() {
@@ -63,13 +66,65 @@ async function onLoginClick(event) {
     displayLoginLoadingScreen();
 
     try {
-        let webid = document.getElementById('webid').value;
-        webid = webid.trim();
+        let webid = document.getElementById('webid').value.trim();
         if(!webid) throw new Error("WebID is invalid");
-        currentUser = await createUserFromWebID(webid);
-        
-        setLoginLoadingMessage("Logging in to Solid client...");
-        await loginUser(currentUser);
+
+        let oidcIssuer = document.getElementById('oidcIssuer').value.trim();
+        let storage = document.getElementById('storage').value.trim();
+        document.getElementById('oidcIssuer').value = null;
+        document.getElementById('storage').value = null;
+
+        if(!oidcIssuer) {
+            oidcIssuer = await getIssuerFromWebID(webid);
+        }
+
+        if(!storage) {
+            storage = await getStorageFromWebID(webid);
+        }
+
+        // if the storage or oidcIssuer triple was not found in the pod ask to fill it in
+        if(!oidcIssuer || !storage) {
+            if(!oidcIssuer && !storage) {
+                setLoginMessage("pim:storage & solid:oidcIssuer location was not found in pod");
+            } else if (!storage) {
+                setLoginMessage("pim:storage location was not found in pod");
+            } else if (!oidcIssuer) {
+                setLoginMessage("solid:oidcIssuer location was not found in pod");
+            }
+            displayExtraLogin(oidcIssuer, storage);
+        } else {
+            let userData = await getUserDataFromWebID(webid);
+
+            // add trailing '/' for urls
+            if (oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
+            if (storage.substr(-1) != '/') storage += '/';
+
+            currentUser = new User(webid);
+            currentUser.oidcIssuer = oidcIssuer;
+            currentUser.storage = storage;
+            currentUser.givenName = userData.givenName;
+            currentUser.familyName = userData.familyName;
+            currentUser.img = userData.img;
+
+            console.log(currentUser);
+            
+            setLoginLoadingMessage("Logging in to Solid client...");
+            
+            // try login, if login failed: check if this user is already logged in.
+            if(!await loginUser(currentUser)) {
+                console.log(isLoggedIn(currentUser));
+                // if this user is already logged in go immediatly to handleRedirect to handle this login
+                // if this user is not yet logged in the previouse user will be logged out so the new one can log in
+                if(isLoggedIn(currentUser.webid)) {
+                    await handleRedirect();
+                } else {
+                    // TODO: there is an error when you first login with another user on the same oidcIssuer and then call logout
+                    // the next login will login the previous user if the oidcIssuer logs you in automatic.
+                    await logoutUser();
+                    await loginUser(currentUser);
+                }
+            }
+        }
         
         // check handleRedirectAfterLogin for further steps
     } catch(error) {
@@ -86,8 +141,9 @@ async function onCheckboxChange(event) {
     if(i >= 0) {
         if(event.currentTarget.checked) {
             friendUsers[i].showLocation = true;
-            let loc = friendUsers[i].locations.length > 0 ? friendUsers[i].locations[friendUsers[i].locations.length - 1] : null;
-            createMarkerFromUser(loc, friendUsers[i]);
+            let loc = friendUsers[i].getLatestLocation();
+            if(loc)
+                createMarkerFromUser(loc, friendUsers[i]);
         } else {
             friendUsers[i].showLocation = false;
             removeMarkerFromUser(friendUsers[i]);
@@ -121,26 +177,53 @@ async function onRequestLocationClick(event) {
     setRequestLocationMessage("");
     displayRequestLocationLoading();
 
-    try {
-        let webid_frnd = document.getElementById('friend-webid').value;
-        if(!webid_frnd) throw new Error("Invalid WebID");
-
-        // create user object with available info in pod
-        let friendUser = await createUserFromWebID(webid_frnd);
-        friendUsers.push(friendUser);
-
-        await sendNotification(currentUser.webid, friendUser.storage);
-
-
-        addFriendsCard(friendUser, onCheckboxChange);
-
-    } catch(error) {
-        setRequestLocationMessage(error.message);
-    } finally {
+    
+    let webid_frnd = document.getElementById('friend-webid').value;
+    if(!webid_frnd) {   
+        setRequestLocationMessage("Invalid WebID");
         hideRequestLocationLoading();
+        return;
+    } 
+
+    try {
+        const index = await addFriend(webid_frnd);
+
+        // only send the notification if the friendUser is complete
+        if(friendUsers[index].isUsable()) {
+            try {
+                await sendNotification(currentUser.webid, friendUsers[index].storage);
+            } catch(error) {
+                setRequestLocationMessage(error.message);
+            }
+        }
+    } catch(e) {
+        setRequestLocationMessage(e.message);
+    }
+    
+    hideRequestLocationLoading();
+}
+
+async function onUserMenuUpdateClick(event) {
+    const webid = document.getElementById("user-options-webid").innerHTML;
+    if(!webid) {
+        setUserMenuErrorMessage("WebID is invalid.");
+        return;
     }
 
-    hideRequestLocationLoading();
+    let oidcIssuer = document.getElementById("user-options-oidcIssuer").value.trim();
+    let storage = document.getElementById("user-options-storage").value.trim();
+
+    // add trailing '/' for urls
+    if (oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
+    if (storage.substr(-1) != '/') storage += '/';
+
+
+    const i = friendUsers.findIndex(f => f.webid == webid);
+    
+}
+
+async function onUserMenuDeleteClick(event) {
+
 }
 
 // TODO: check code flow for when button is pressed (approve/revoke/requestNotification) access
@@ -182,6 +265,16 @@ async function onApproveButtonClick(event) {
     }
 }
 
+async function onFriendsCardClick(event) {
+    const i = friendUsers.findIndex(f => f.webid == event.currentTarget.webid);
+    if(i < 0)
+        return;
+
+    displayUserMenu(friendUsers[i], onUserMenuUpdateClick, onUserMenuDeleteClick);
+    if(friendUsers[i].getLatestLocation())
+        moveMap(friendUsers[i].getLatestLocation(), 9);
+}
+
 // checks if the user is logged in and starts the mainloop
 async function handleRedirect() {
     setLoginLoadingMessage("Checking user...");
@@ -193,8 +286,9 @@ async function handleRedirect() {
         if(currentUser === null)
             return;
 
+        document.getElementById("webid").value = currentUser.webid;
+
         setLoginLoadingMessage("Creating inbox...");
-        // displayLoginLoadingScreen();
         await createInbox(currentUser.storage);
 
         setLoginLoadingMessage("Setting inbox permissions...");
@@ -205,6 +299,7 @@ async function handleRedirect() {
 
     } catch(error) {
         setLoginMessage(error.message);
+        return;
     } finally {
         hideLoginLoadingScreen();
     }
@@ -236,11 +331,19 @@ async function updateMap() {
 
     for(let i in friendUsers) {
         let user = friendUsers[i];
-        if(user.hasAccess) {
-            const loc = await getLatestLocation(user.storage);
+        if(user.isUsable() && user.hasAccess) {
+
+            let loc;
+            try {
+                loc = await getLatestLocation(user.storage);
+            } catch (error) {
+                updateFriendsCard(user, 'error', 'Failed retrieving location data');
+                return;
+            }
+
             if(loc) {
                 // only if it is a new location => push to array and create marker
-                let latest_loc = friendUsers[i].locations.length > 0 ? friendUsers[i].locations[friendUsers[i].locations.length - 1] : null;
+                let latest_loc = friendUsers[i].getLatestLocation();
                 if(!latest_loc || latest_loc.timestamp < loc.timestamp) {
                     friendUsers[i].locations.push(loc);
 
@@ -278,12 +381,15 @@ async function updateFriendsAccessRights() {
 
         // remove/update access
         for(let i in friendUsers) {
-            let j = haveAccess.findIndex(f => f.webid == friendUsers[i].webid);
-            if(j >= 0) {
-                friendUsers[i].hasAccess = true;
-            } else {
-                friendUsers[i].hasAccess = false;
-                removeFriendsCard(friendUsers[i]);
+            if(friendUsers[i].isUsable()) {
+                let j = haveAccess.findIndex(f => f.webid == friendUsers[i].webid);
+                if(j >= 0) {
+                    friendUsers[i].hasAccess = true;
+                    updateFriendsCard(friendUsers[i], 'done');
+                } else {
+                    friendUsers[i].hasAccess = false;
+                    updateFriendsCard(friendUsers[i], 'revoked');
+                }
             }
         }
 
@@ -294,19 +400,23 @@ async function updateFriendsAccessRights() {
                 return;
 
             // check if not already in friend list
-            let friendUser;
             let i = friendUsers.findIndex(f => f.webid == friend.webid);
             if(i == -1) {
-                // not yet in friend list => get info with the webid;
-                friendUser = await createUserFromWebID(friend.webid);
-                friendUser.hasAccess = true;
-                friendUsers.push(friendUser);
+                let index;
+                try {
+                    index = await addFriend(friend.webid);
+                } catch(error) {
+                    console.log(error);
+                }
+                
+                // only set hasaccess when the friendUser is complete
+                if(friendUsers[index].isUsable()) {
+                    friendUsers[index].hasAccess = true;
+                }
             } else {
                 friendUsers[i].hasAccess = true;
-                friendUser = friendUsers[i];
+                updateFriendsCard(friendUsers[i], 'done');
             }
-            addFriendsCard(friendUser, onCheckboxChange);
-            updateFriendsCard(friendUser);
         }
 
     } catch(error) {
@@ -315,6 +425,7 @@ async function updateFriendsAccessRights() {
     }
 }
 
+// TODO: show the name of the user (make the requestNotification functions use the user object)
 async function createRequestNotifications() {
     let new_requests = {};
     try {
@@ -374,6 +485,35 @@ async function startPostingLocations() {
 
 function stopPostingLocations() {
     navigator.geolocation.clearWatch(locator);
+}
+
+//returns an index of friendUsers
+async function addFriend(webid) {
+    // create user object with available info in pod
+    let friendUser = new User(webid);
+
+    friendUser = await createUserFromWebID(webid);
+
+    addFriendsCard(friendUser, onFriendsCardClick, onCheckboxChange, 'pending');
+
+    if(!friendUser.isUsable()) {
+        updateFriendsCard(friendUser, 'error');
+
+        let msg;
+        if(!friendUser.oidcIssuer && !friendUser.storage) {
+            msg = "Could not access solid:oidcIssuer & pim:storage";
+        } else if(!friendUser.oidcIssuer) {
+            msg = "Could not access solid:oidcIssuer";
+        } else if (!friendUser.storage) {
+            msg = "Could not access pim:storage";
+        }
+        displayUserMenu(friendUser, onUserMenuUpdateClick, onUserMenuDeleteClick, msg);
+        
+    } else {
+        updateFriendsCard(friendUser, 'done');
+    }
+
+    return friendUsers.push(friendUser) - 1;
 }
 
 function sleep(ms) {

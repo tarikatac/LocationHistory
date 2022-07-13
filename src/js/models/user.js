@@ -33,4 +33,12 @@ export class User {
             return this.webid;
         }
     }
+
+    getLatestLocation() {
+        return this.locations.length > 0 ? this.locations[this.locations.length - 1] : null;
+    }
+
+    isUsable() {
+        return this.storage && this.oidcIssuer;
+    }
 }

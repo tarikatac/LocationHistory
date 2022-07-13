@@ -23,7 +23,7 @@ img.huechange {
 
 .over-screen {
     position: absolute;
-    z-index: 2000;
+    z-index: 9000;
     top: 0px;
     bottom: 0px;
     width: 100%;
@@ -47,6 +47,10 @@ img.huechange {
 
 #login-loading-message {
     margin-bottom: 40px;
+}
+
+.error-font {
+    color: $error-color;
 }
 
 .error-msg {
@@ -125,8 +129,16 @@ main {
 }
 
 .collection-checkbox {
-    margin-top: 9px;
+    position: absolute;
     width: 20px;
+    top: 33px;
+    right: 17px;
+}
+
+.user-options-button {
+    position: absolute;
+    top: 5px;
+    right: 3px;
 }
 
 .btn-symbol {
@@ -153,4 +165,86 @@ main {
 
 .invisible .btn {
     display: none;
+}
+
+#friends-list > .collection-item:hover {
+    background-color: #ddd;
+    cursor: pointer;
+}
+
+#user-menu {
+    position: absolute;
+    z-index: 8000;
+    top: 20px;
+    right: 20px;
+    background-color: white;
+    width: 300px;
+    max-height: 90vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 5px;
+}
+
+#user-menu > h1 {
+    font-size: 1.4em;
+    margin: 0;
+    padding: 15px 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+#user-menu-close-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    cursor: pointer;
+}
+
+table.options-table > tbody > tr > td {
+    padding: 5px 5px;
+}
+
+table.options-table > tbody > tr > td:first-child {
+    padding-left: 15px;
+}
+
+table.options-table > tbody > tr > td:last-child {
+    padding-right: 15px;
+}
+
+table.options-table > tbody > tr:last-child > td {
+    padding-bottom: 10px;
+}
+
+.user-controls {
+    float: right;
+    padding-right: 15px;
+}
+
+::placeholder {
+    color: rgb(124, 124, 124);
+}
+
+#login-input-extra > table.options-table > tbody > tr > td:first-child {
+    width: 100px;
+}
+
+#login-input-extra > table.options-table > tbody > tr > td:last-child {
+    width: auto;
+}
+
+.error-border {
+    border: 5px solid red;
+}
+
+#user-options {
+    width: 300px;
+    table-layout: fixed;
+}
+
+div.scrollable {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
 }

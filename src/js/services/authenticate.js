@@ -1,10 +1,23 @@
 import {
     login,
+    logout,
     handleIncomingRedirect,
     getDefaultSession,
 } from "@inrupt/solid-client-authn-browser";
 
 import { User } from "../models/user";
+
+export async function logoutUser() {
+    try {
+        await logout();
+    } catch(error) {
+        console.log("logout failed");
+    }
+}
+
+export function isLoggedIn(webid) {
+    return getDefaultSession().info.webId == webid;
+}
 
 export async function loginUser(user) {
     if(user) {
@@ -20,9 +33,12 @@ export async function loginUser(user) {
                     redirectUrl: window.location.href,
                     clientName: "LocationHistory"
                 });
+                return true;
             } catch(error) {
-                throw new Error("Error logging in");
+                throw new Error("Error logging in, check if solid:oidcIssuer is correct");
             }
+        } else {
+            return false;
         }
     }
 }
