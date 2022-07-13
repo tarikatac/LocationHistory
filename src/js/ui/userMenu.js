@@ -9,10 +9,7 @@ let updateButton;
 let deleteButton;
 let errorField;
 
-let deleteFunc;
-let updateFunc;
-
-export function initUserMenu() {
+export function initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick) {
     user_menu = document.getElementById("user-menu");
     document.getElementById("user-menu-close-button").addEventListener("click", (event) => {
         hideUserMenu();
@@ -26,11 +23,11 @@ export function initUserMenu() {
     deleteButton = document.getElementById("user-options-delete");
     errorField = document.getElementById("user-options-error");
 
-    updateButton.addEventListener("click", updateFunc);
-    deleteButton.addEventListener("click", deleteFunc);
+    updateButton.addEventListener("click", onUserMenuUpdateClick);
+    deleteButton.addEventListener("click", onUserMenuDeleteClick);
 }
 
-export function displayUserMenu(user, onUserMenuUpdateClick, onUserMenuDeleteClick, message = 'Press update to apply changes') {
+export function displayUserMenu(user, message) {
     if(!user)
         return;
     
@@ -38,11 +35,11 @@ export function displayUserMenu(user, onUserMenuUpdateClick, onUserMenuDeleteCli
     webidField.innerHTML = user.webid;
     oidcIssuerField.value = user.oidcIssuer;
     storageField.value = user.storage;
-    errorField.innerHTML = message;
 
-    updateFunc = onUserMenuUpdateClick;
-    deleteFunc = onUserMenuDeleteClick;
-    
+    if(message)
+        errorField.innerHTML = message;
+    else
+        errorField.innerHTML = 'Press update to apply changes';
 
     user_menu.classList.remove("hidden");
 }

@@ -8,6 +8,8 @@ export class User {
     img;
     hasAccess = false;
     showLocation = true;
+    statusMessage;
+    isRemoved = false;
 
     // {
     //     lat,

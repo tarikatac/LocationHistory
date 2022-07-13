@@ -3,7 +3,7 @@ import { User } from "../models/user";
 const statusMessage = {
     pending : 'Awaiting approval',
     error: 'Error: click for more info',
-    revoked : 'Friend revoked access rights',
+    revoked : 'No access rights',
     done: 'Shared location'
 }
 

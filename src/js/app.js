@@ -27,7 +27,7 @@ import { addFriendsCard, updateFriendsCard, removeFriendsCard } from "./ui/card"
 import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, setLoginLoadingMessage, setLoginMessage, displayExtraLogin, hideExtraLogin } from "./ui/login";
 import { displayRequestLocationLoading, hideRequestLocationLoading, setRequestLocationMessage } from "./ui/requestLocation"
 import { addRequestNotification, removeRequestNotification, requestNotificationExists, updateRequestNotification } from "./ui/requestNotification"
-import { displayUserMenu, hideUserMenu, initUserMenu } from "./ui/userMenu";
+import { displayUserMenu, hideUserMenu, initUserMenu, setUserMenuErrorMessage } from "./ui/userMenu";
 
 var locator;
 
@@ -45,7 +45,7 @@ async function init() {
 
     initMap();
 
-    initUserMenu();
+    initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick);
 }
 
 function addEventListeners() {
@@ -218,12 +218,58 @@ async function onUserMenuUpdateClick(event) {
     if (storage.substr(-1) != '/') storage += '/';
 
 
+    // find the user
     const i = friendUsers.findIndex(f => f.webid == webid);
+
+    // update the friend
+    friendUsers[i].oidcIssuer = oidcIssuer;
+    friendUsers[i].storage = storage;
+
+    updateFriendsCard(friendUsers[i], 'pending');
+
+    let friendUser = friendUsers[i];
+
+    // only send the notification if the friendUser is complete
+    if(friendUsers[i].isUsable()) {
+        try {
+            await sendNotification(currentUser.webid, friendUsers[i].storage);
+            friendUsers[i].statusMessage = null;
+            displayUserMenu(friendUsers[i], 'Press update to apply changes');
+        } catch(error) {
+            friendUsers[i].statusMessage = error.message;
+            displayUserMenu(friendUsers[i], error.message);
+        }
+    } else {
+        try {
+            await addFriend(friendUsers.splice(i, 1)[0]);
+        } catch(error) {
+            displayUserMenu(friendUser, error.message);
+        }
+        
+    }
+
     
+            
 }
 
 async function onUserMenuDeleteClick(event) {
+    const webid = document.getElementById("user-options-webid").innerHTML;
+    if(!webid) {
+        setUserMenuErrorMessage("WebID is invalid.");
+        return;
+    }
 
+    // find the user
+    const i = friendUsers.findIndex(f => f.webid == webid);
+    let friendUser = friendUsers[i];
+
+    // TODO: at the moment this is a temporary solution because it will still read the accessgreanted notification and create a new user
+    // set status user is removed
+    friendUsers[i].isRemoved = true;
+
+    removeFriendsCard(friendUser);
+    removeMarkerFromUser(friendUser);
+    hideUserMenu();
 }
 
 // TODO: check code flow for when button is pressed (approve/revoke/requestNotification) access
@@ -270,7 +316,7 @@ async function onFriendsCardClick(event) {
     if(i < 0)
         return;
 
-    displayUserMenu(friendUsers[i], onUserMenuUpdateClick, onUserMenuDeleteClick);
+    displayUserMenu(friendUsers[i], friendUsers[i].statusMessage);
     if(friendUsers[i].getLatestLocation())
         moveMap(friendUsers[i].getLatestLocation(), 9);
 }
@@ -489,10 +535,23 @@ function stopPostingLocations() {
 
 //returns an index of friendUsers
 async function addFriend(webid) {
-    // create user object with available info in pod
-    let friendUser = new User(webid);
 
-    friendUser = await createUserFromWebID(webid);
+    // check if friend not already exist
+    let friendUser;
+    let i = friendUsers.findIndex(f => f.webid == webid);
+    if(i >= 0) {
+        friendUsers[i].isRemoved = false;
+        friendUser = friendUsers[i];
+    } else {
+        // create user object with available info in pod
+        friendUser = new User(webid);
+
+        friendUser = await createUserFromWebID(webid);
+
+        i = friendUsers.push(friendUser) - 1;
+    }
+
+    
 
     addFriendsCard(friendUser, onFriendsCardClick, onCheckboxChange, 'pending');
 
@@ -507,13 +566,14 @@ async function addFriend(webid) {
         } else if (!friendUser.storage) {
             msg = "Could not access pim:storage";
         }
-        displayUserMenu(friendUser, onUserMenuUpdateClick, onUserMenuDeleteClick, msg);
+        friendUsers[i].statusMessage = msg;
+        displayUserMenu(friendUser, msg);
         
     } else {
         updateFriendsCard(friendUser, 'done');
     }
 
-    return friendUsers.push(friendUser) - 1;
+    return i;
 }
 
 function sleep(ms) {
