@@ -54,7 +54,7 @@ export async function handleRedirectAfterLogin() {
         const user = window.sessionStorage.getItem("currentUser");
         if(user) {
             try {
-                return JSON.parse(user);
+                return User.CreateUserFromObject(JSON.parse(user));
             } catch(error) {
                 throw new Error("Could not get login info after redirect");
             }

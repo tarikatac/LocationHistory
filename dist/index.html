@@ -150,41 +150,68 @@
 				<table id="user-options" class="options-table striped">
 					<tbody>
 						<tr>
-							<td colspan="2" class="center-align">
+							<td colspan="6" class="center-align">
 								<p id="user-options-error" class="error-font">Press update to apply changes</p>
 							</td>
 						</tr>
 						<tr>
-							<td>
+							<td colspan="2">
 								<p>WebID</p>
 							</td>
-							<td>
+							<td colspan="4">
 								<div id="user-options-webid" class="scrollable">
 									webidwebidwebidwebidwebidwebidwebidwebidwebid
 								</div>
 							</td>
 						</tr>
 						<tr>
-							<td>
+							<td colspan="2">
 								solid:oidcIssuer
 							</td>
-							<td>
+							<td colspan="4">
 								<input type="text" id="user-options-oidcIssuer" class="" placeholder="solid:oidcIssuer">
 							</td>
 						</tr>
 						<tr>
-							<td>
+							<td colspan="2">
 								pim:storage
 							</td>
-							<td>
+							<td colspan="4">
 								<input type="text" id="user-options-storage" class="" placeholder="pim:storage">
 							</td>
 						</tr>
 						<tr>
-							<td class="center-align">
+							<td colspan="6">
+								<div class="input-field">
+									<select id="user-options-view-mode">
+										<option selected value="marker">Latest Location Marker</option>
+										<option value="route">Route (From - To)</option>
+									  </select>
+									  <label>View mode</label>
+								</div>
+							</td>
+						</tr>
+						<tr>
+							<td colspan="3">
+								<div class="input-field">
+									<input id="user-options-from-day" placeholder="Date" type="text" class="datepicker">
+									<label for="user-options-from-day">From</label>
+								</div>
+								<input id="user-options-from-time" placeholder="Time" type="text" class="timepicker">
+							</td>
+							<td colspan="3">
+								<div class="input-field">
+									<input id="user-options-to-day" placeholder="Date" type="text" class="datepicker">
+									<label for="user-options-to-day">To</label>
+								</div>
+								<input id="user-options-to-time" placeholder="Time" type="text" class="timepicker">
+							</td>
+						</tr>
+						<tr>
+							<td colspan="3" class="center-align">
 								<button id="user-options-update" class="btn-small green darken-2">Update</button>
 							</td>
-							<td class="center-align">
+							<td colspan="3" class="center-align">
 								<button id="user-options-delete" class="btn-small red darken-2">Delete</button>
 							</td>
 						</tr>

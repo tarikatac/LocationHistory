@@ -8,7 +8,7 @@ import { User } from "./models/user"
 // services import
 import { createUserFromWebID, getIssuerFromWebID, getStorageFromWebID, getUserDataFromWebID } from "./services/webid";
 import { loginUser, handleRedirectAfterLogin, isLoggedIn, logoutUser } from "./services/authenticate";
-import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap } from "./services/map";
+import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap, removeRouteFromUser, createRouteFromUser } from "./services/map";
 import { 
     createInbox,
     givePublicAccesstotheInbox,
@@ -28,6 +28,7 @@ import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, set
 import { displayRequestLocationLoading, hideRequestLocationLoading, setRequestLocationMessage } from "./ui/requestLocation"
 import { addRequestNotification, removeRequestNotification, requestNotificationExists, updateRequestNotification } from "./ui/requestNotification"
 import { displayUserMenu, hideUserMenu, initUserMenu, setUserMenuErrorMessage } from "./ui/userMenu";
+import { DateFormatter } from "./models/dateFormatter";
 
 var locator;
 
@@ -46,6 +47,8 @@ async function init() {
     initMap();
 
     initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick);
+
+    initUIElements();
 }
 
 function addEventListeners() {
@@ -96,8 +99,8 @@ async function onLoginClick(event) {
             let userData = await getUserDataFromWebID(webid);
 
             // add trailing '/' for urls
-            if (oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
-            if (storage.substr(-1) != '/') storage += '/';
+            if (oidcIssuer && oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
+            if (storage && storage.substr(-1) != '/') storage += '/';
 
             currentUser = new User(webid);
             currentUser.oidcIssuer = oidcIssuer;
@@ -210,46 +213,86 @@ async function onUserMenuUpdateClick(event) {
         return;
     }
 
+    // find the user
+    const i = friendUsers.findIndex(f => f.webid == webid);
+
     let oidcIssuer = document.getElementById("user-options-oidcIssuer").value.trim();
     let storage = document.getElementById("user-options-storage").value.trim();
 
     // add trailing '/' for urls
-    if (oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
-    if (storage.substr(-1) != '/') storage += '/';
+    if (oidcIssuer && oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
+    if (storage && storage.substr(-1) != '/') storage += '/';
 
+    // get view mode
+    let viewMode = document.getElementById("user-options-view-mode").value;
 
-    // find the user
-    const i = friendUsers.findIndex(f => f.webid == webid);
+    if(viewMode == 'route') {
+        // get the date time;
+        let fromDay = document.getElementById("user-options-from-day").value.trim();
+        let fromTime = document.getElementById("user-options-from-time").value.trim();
+        let toDay = document.getElementById("user-options-to-day").value.trim();
+        let toTime = document.getElementById("user-options-to-time").value.trim();
 
-    // update the friend
-    friendUsers[i].oidcIssuer = oidcIssuer;
-    friendUsers[i].storage = storage;
-
-    updateFriendsCard(friendUsers[i], 'pending');
-
-    let friendUser = friendUsers[i];
-
-    // only send the notification if the friendUser is complete
-    if(friendUsers[i].isUsable()) {
-        try {
-            await sendNotification(currentUser.webid, friendUsers[i].storage);
-            friendUsers[i].statusMessage = null;
-            displayUserMenu(friendUsers[i], 'Press update to apply changes');
-        } catch(error) {
-            friendUsers[i].statusMessage = error.message;
-            displayUserMenu(friendUsers[i], error.message);
+        // create error message when date fields are invalid
+        let msg = "";
+        if(!DateFormatter.isValidDateFormat(fromDay))
+            msg += "From Date, ";
+        if(!DateFormatter.isValidTimeFormat(fromTime))
+            msg += "From Time, ";
+        if(!DateFormatter.isValidDateFormat(toDay))
+            msg += "To Date, ";
+        if(!DateFormatter.isValidTimeFormat(toTime))
+            msg += "To Time, "
+        if(msg != "") {
+            setUserMenuErrorMessage(msg + "is invalid.");
+            return;
         }
-    } else {
-        try {
-            await addFriend(friendUsers.splice(i, 1)[0]);
-        } catch(error) {
-            displayUserMenu(friendUser, error.message);
-        }
+
         
+        friendUsers[i].displayTimeFrom = new DateFormatter(fromDay, fromTime);
+        friendUsers[i].displayTimeTo = new DateFormatter(toDay, toTime);
     }
 
+    // check if viewmode is changed
+    if(friendUsers[i].displayMode != viewMode) {
+        friendUsers[i].displayMode = viewMode;
+    }
     
+
+    // try to update the user when new issuer/storage was given
+    if(oidcIssuer != friendUsers[i].oidcIssuer || storage != friendUsers[i].storage) {
+        // update the friend
+        friendUsers[i].oidcIssuer = oidcIssuer;
+        friendUsers[i].storage = storage;
+
+        updateFriendsCard(friendUsers[i], 'pending');
+
+        let friendUser = friendUsers[i];
+
+        // only send the notification if the friendUser is complete
+        if(friendUsers[i].isUsable()) {
+            try {
+                await sendNotification(currentUser.webid, friendUsers[i].storage);
+                friendUsers[i].statusMessage = null;
+                displayUserMenu(friendUsers[i], 'Press update to apply changes');
+            } catch(error) {
+                friendUsers[i].statusMessage = error.message;
+                displayUserMenu(friendUsers[i], error.message);
+            }
+            await updateFriendsAccessRights();
+            await updateMap();
+        } else {
+            try {
+                await addFriend(friendUsers.splice(i, 1)[0]);
+            } catch(error) {
+                displayUserMenu(friendUser, error.message);
+            }
             
+        }
+    } else {
+        await updateFriendsAccessRights();
+        await updateMap();
+    }            
 }
 
 async function onUserMenuDeleteClick(event) {
@@ -366,7 +409,7 @@ async function mainLoop() {
 
     await updateMap();
 
-    window.setTimeout(mainLoop, 5000);
+    window.setTimeout(mainLoop, 1000);
 }
 
 // updates the map for each friend the user has access to. Only a new marker is shown when a location with a newer timestamp is found.
@@ -388,21 +431,29 @@ async function updateMap() {
             }
 
             if(loc) {
+                
                 // only if it is a new location => push to array and create marker
                 let latest_loc = friendUsers[i].getLatestLocation();
                 if(!latest_loc || latest_loc.timestamp < loc.timestamp) {
                     friendUsers[i].locations.push(loc);
+                }
 
-                    // if checkbox is not checked it will not show the marker on the map
-                    if(user.showLocation) {
-                        
-                        // move the map to the first friend you have access to
-                        if(first_time) {
-                            moveMap(loc, 9);
-                            first_time = false;
-                        }
+                // if checkbox is not checked it will not show the marker on the map
+                if(user.showLocation) {
+                    if(user.displayMode == 'marker') {
+                        removeRouteFromUser(user);
 
                         createMarkerFromUser(loc, user);
+                    } else if(user.displayMode == 'route') {
+                        removeMarkerFromUser(user);
+
+                        createRouteFromUser(user, user.displayTimeFrom, user.displayTimeTo);
+                    }
+
+                    // move the map to the first friend you have access to
+                    if(first_time) {
+                        moveMap(loc, 9);
+                        first_time = false;
                     }
                 }
             }
@@ -411,6 +462,7 @@ async function updateMap() {
         // if checkbox is unchecked do not show the marker
         if(!user.showLocation) {
             removeMarkerFromUser(user);
+            removeRouteFromUser(user);
         }
     }
 }
@@ -422,8 +474,6 @@ async function updateFriendsAccessRights() {
 
         console.log("haveAccess");
         console.log(haveAccess);
-
-        // TODO: check when cards need to be removed, maybe add a pending status
 
         // remove/update access
         for(let i in friendUsers) {
@@ -459,7 +509,7 @@ async function updateFriendsAccessRights() {
                 if(friendUsers[index].isUsable()) {
                     friendUsers[index].hasAccess = true;
                 }
-            } else {
+            } else if(friendUsers[i].isUsable()) {
                 friendUsers[i].hasAccess = true;
                 updateFriendsCard(friendUsers[i], 'done');
             }
@@ -507,30 +557,43 @@ function addPostedLocationHistory(lat, long, timestamp) {
     collection.insertBefore(a, collection.firstChild);
 }
 
+// check every x seconds if the current position is changed. Only if it is changed post this new location
 async function startPostingLocations() {
-    var optn = {
-        enableHighAccuracy: true,
-        timeout: Infinity,
-        maximumAge: 0
-    };
     if (navigator.geolocation) {
-        locator = navigator.geolocation.watchPosition(async function (position) {
+        clearInterval(locator);
+        locator = setInterval(() => {
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                // success
 
-            addPostedLocationHistory(position.coords.latitude, position.coords.longitude, position.timestamp);
+                // only if it is a new location
+                let latest_loc = currentUser.getLatestLocation();
+                if(!latest_loc || (latest_loc.timestamp < pos.timestamp && latest_loc.lat != pos.coords.latitude && latest_loc.long != pos.coords.longitude)) {
+                    currentUser.locations.push({lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp});
 
-            const platform = navigator.platform.split(" ").join('');
-            await putNewLocation(currentUser.webid, currentUser.storage, {lat: position.coords.latitude, long: position.coords.longitude, timestamp: position.timestamp}, platform);
-
-        }, async function error() {
-            console.log('Unable to retrieve your location');
-        }, optn);
+                    addPostedLocationHistory(pos.coords.latitude, pos.coords.longitude, pos.timestamp);
+    
+                    const platform = navigator.platform.split(" ").join('');
+                    await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
+    
+                }
+            }, (err) => {
+                //error
+                console.log('Unable to retrieve your location');
+            }, {
+                enableHighAccuracy: true,
+                timeout: Infinity,
+                maximumAge: 0
+            });
+        }, 1000);
+        
+       
     } else {
         // TODO: show message posting location is not possible
     }
 }
 
 function stopPostingLocations() {
-    navigator.geolocation.clearWatch(locator);
+    clearInterval(locator);
 }
 
 //returns an index of friendUsers
@@ -578,6 +641,19 @@ async function addFriend(webid) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function initUIElements() {
+    document.addEventListener('DOMContentLoaded', function() {
+        var elemsSelect = document.querySelectorAll('select');
+        M.FormSelect.init(elemsSelect);
+
+        var elemsDatePicker = document.querySelectorAll('.datepicker');
+        M.Datepicker.init(elemsDatePicker, { format: 'yyyy/mm/dd' });
+
+        var elemsTimePicker = document.querySelectorAll('.timepicker');
+        M.Timepicker.init(elemsTimePicker, { twelveHour: false });
+      });    
 }
 
 init();

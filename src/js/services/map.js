@@ -7,6 +7,9 @@ let map;
 // hashmap webid => marker
 let markers = new Map();
 
+// webid => polyline
+let routes = new Map();
+
 export function initMap() {
     map = L.map('map');
     map.setView([0, 0], 3);
@@ -58,4 +61,43 @@ export function removeMarkerFromUser(user) {
 
 export function moveMap(loc, zoom) {
     map.setView([loc.lat, loc.long], zoom);
+}
+
+export function createRouteFromUser(user, t1, t2) {
+    if(!user)
+        return;
+
+    //create polyline
+    let latlngs = [];
+
+    if(t1 && t2) {
+        for(let loc of user.locations) {
+            if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
+                latlngs.push([loc.lat, loc.long]);
+            }
+            
+        }
+    } else {
+        for(let loc of user.locations) {
+            latlngs.push([loc.lat, loc.long]);
+        }
+    }
+
+    if(routes.get(user.webid)) {
+        //update polyline
+        routes.get(user.webid).setLatLngs(latlngs);
+    } else {
+        //new polyline
+        routes.set(user.webid, L.polyline(latlngs, {color: 'red'}).addTo(map));
+    }
+}
+
+export function removeRouteFromUser(user) {
+    if(!user)
+        return;
+
+    if(routes.get(user.webid)) {
+        map.removeLayer(routes.get(user.webid));
+        routes.delete(user.webid);
+    }
 }
