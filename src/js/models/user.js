@@ -54,6 +54,22 @@ export class User {
         return this.locations.length > 0 ? this.locations[this.locations.length - 1] : null;
     }
 
+    getLocations(t1, t2) {
+        let locs = [];
+        for(let l of this.locations) {
+            if(t1 <= l.timestamp && l.timestamp <= t2) {
+                locs.push(l);
+            }
+        }
+        return locs;
+    }
+
+    // adds the locations in order of timestamp
+    addLocations(locs) {
+        this.locations = this.locations.concat(locs);
+        this.locations.sort((a, b) => a.timestamp - b.timestamp);
+    }
+
     isUsable() {
         return this.storage && this.oidcIssuer;
     }

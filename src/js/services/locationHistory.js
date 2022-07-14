@@ -443,3 +443,62 @@ export async function putNewLocation(webid, storage, loc, platform) {
             credentials: 'include'
         });
 }
+
+// retrieves all the locations between t1 and t2. without retrieving the locations that are present in exclude. exclude is an array of timestamps
+export async function getLocationsBetweenTimestamps(storage, t1, t2, excludes = []) {
+    console.log("getLocationsBetweenTimestamps");
+    // Fetch the latest timestamp 
+    const container = storage + container_path;
+    let bindingsStream;
+
+    bindingsStream = await myEngine.queryBindings(`
+        SELECT (STRAFTER(?fileName, "/YourLocationHistory/Data/") AS ?tmstmp)
+        WHERE {
+            ?s <http://www.w3.org/ns/ldp#contains> ?name .
+            BIND (STR(?name) AS ?fileName)
+            FILTER (STRAFTER(?fileName, "/YourLocationHistory/Data/") >= "${t1}" && STRAFTER(?fileName, "/YourLocationHistory/Data/") <= "${t2}")
+        }
+        ORDER BY ASC(?tmstmp)`, {
+        sources: [`${container}`],
+        fetch: myfetchFunction,
+        httpIncludeCredentials: true
+    });
+    myEngine.invalidateHttpCache();
+
+
+    // Consume results as an array (easier)
+    const bindings = await bindingsStream.toArray();
+
+    console.log(bindings.length);
+
+    // no location data
+    if(!bindings || ! bindings[0])
+        return null;
+
+    let locations = [];
+    for(let binding of bindings) {
+        const timestamp = binding.get('tmstmp').value;
+
+        if(!excludes.includes(timestamp)) {
+            const bindingsStream_1 = await myEngine.queryBindings(`
+                SELECT ?lat ?long WHERE {
+                ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+                    <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
+                }`, {
+                sources: [`${container}${timestamp}`],
+                fetch: myfetchFunction,
+                httpIncludeCredentials: true
+            });
+
+            const bindings_1 = await bindingsStream_1.toArray();
+
+            locations.push({
+                lat: bindings_1[0].get('lat').value,
+                long: bindings_1[0].get('long').value,
+                timestamp: timestamp
+            });
+        }
+    }
+
+    return locations;
+}

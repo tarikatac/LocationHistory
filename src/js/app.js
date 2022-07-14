@@ -19,7 +19,8 @@ import {
     revokeAccess,
     getAccessGrantedNotifications,
     getLatestLocation,
-    putNewLocation
+    putNewLocation,
+    getLocationsBetweenTimestamps
 } from "./services/locationHistory";
 
 // ui elements imports
@@ -419,14 +420,13 @@ async function updateMap() {
     console.log(friendUsers);
 
     for(let i in friendUsers) {
-        let user = friendUsers[i];
-        if(user.isUsable() && user.hasAccess) {
+        if(friendUsers[i].isUsable() && friendUsers[i].hasAccess) {
 
             let loc;
             try {
-                loc = await getLatestLocation(user.storage);
+                loc = await getLatestLocation(friendUsers[i].storage);
             } catch (error) {
-                updateFriendsCard(user, 'error', 'Failed retrieving location data');
+                updateFriendsCard(friendUsers[i], 'error', 'Failed retrieving location data');
                 return;
             }
 
@@ -439,15 +439,21 @@ async function updateMap() {
                 }
 
                 // if checkbox is not checked it will not show the marker on the map
-                if(user.showLocation) {
-                    if(user.displayMode == 'marker') {
-                        removeRouteFromUser(user);
+                if(friendUsers[i].showLocation) {
+                    if(friendUsers[i].displayMode == 'marker') {
+                        removeRouteFromUser(friendUsers[i]);
 
-                        createMarkerFromUser(loc, user);
-                    } else if(user.displayMode == 'route') {
-                        removeMarkerFromUser(user);
+                        createMarkerFromUser(loc, friendUsers[i]);
+                    } else if(friendUsers[i].displayMode == 'route') {
+                        removeMarkerFromUser(friendUsers[i]);
 
-                        createRouteFromUser(user, user.displayTimeFrom, user.displayTimeTo);
+                        // check if these locations are already stored, then we dont need to retrieve them again
+                        let locs = friendUsers[i].getLocations(friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime());
+                        locs = await getLocationsBetweenTimestamps(friendUsers[i].storage, friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime(), locs.map(x => x.timestamp));
+
+                        friendUsers[i].addLocations(locs);
+
+                        createRouteFromUser(friendUsers[i], friendUsers[i].displayTimeFrom, friendUsers[i].displayTimeTo);
                     }
 
                     // move the map to the first friend you have access to
@@ -460,9 +466,9 @@ async function updateMap() {
         }
 
         // if checkbox is unchecked do not show the marker
-        if(!user.showLocation) {
-            removeMarkerFromUser(user);
-            removeRouteFromUser(user);
+        if(!friendUsers[i].showLocation) {
+            removeMarkerFromUser(friendUsers[i]);
+            removeRouteFromUser(friendUsers[i]);
         }
     }
 }
