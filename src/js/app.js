@@ -3,12 +3,14 @@ import "./../scss/app.scss";
 
 import "leaflet";
 
+// models
 import { User } from "./models/user"
+import { DateFormatter } from "./models/dateFormatter";
 
 // services import
 import { createUserFromWebID, getIssuerFromWebID, getStorageFromWebID, getUserDataFromWebID } from "./services/webid";
 import { loginUser, handleRedirectAfterLogin, isLoggedIn, logoutUser } from "./services/authenticate";
-import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap, removeRouteFromUser, createRouteFromUser } from "./services/map";
+import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap, removeRouteFromUser, createRouteFromUser, removeMarkerSelf, createMarkerSelf } from "./services/map";
 import { 
     createInbox,
     givePublicAccesstotheInbox,
@@ -29,7 +31,7 @@ import { displayLoginLoadingScreen, hideLoginLoadingScreen, hideLoginScreen, set
 import { displayRequestLocationLoading, hideRequestLocationLoading, setRequestLocationMessage } from "./ui/requestLocation"
 import { addRequestNotification, removeRequestNotification, requestNotificationExists, updateRequestNotification } from "./ui/requestNotification"
 import { displayUserMenu, hideUserMenu, initUserMenu, setUserMenuErrorMessage } from "./ui/userMenu";
-import { DateFormatter } from "./models/dateFormatter";
+import { addPostedLocationHistory, initPostedLocationHistory } from "./ui/postedLocationHistory";
 
 var locator;
 
@@ -46,8 +48,6 @@ async function init() {
     handleRedirect();
 
     initMap();
-
-    initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick);
 
     initUIElements();
 }
@@ -553,16 +553,6 @@ async function createRequestNotifications() {
     }   
 }
 
-// TODO: make the link move this map to the location & clean up look
-function addPostedLocationHistory(lat, long, timestamp) {
-    let collection = document.getElementById('posted-locations');
-    let a = document.createElement('a');
-    a.href = "https://www.openstreetmap.org/#map=18/" + lat + "/" + long;
-    a.textContent = " Latitude:" + lat + "°, Longitude:" + long + "°,Timestamp:" + timestamp;
-    a.classList.add("collection-item");
-    collection.insertBefore(a, collection.firstChild);
-}
-
 // check every x seconds if the current position is changed. Only if it is changed post this new location
 async function startPostingLocations() {
     if (navigator.geolocation) {
@@ -577,6 +567,7 @@ async function startPostingLocations() {
                     currentUser.locations.push({lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp});
 
                     addPostedLocationHistory(pos.coords.latitude, pos.coords.longitude, pos.timestamp);
+                    createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
     
                     const platform = navigator.platform.split(" ").join('');
                     await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
@@ -600,6 +591,7 @@ async function startPostingLocations() {
 
 function stopPostingLocations() {
     clearInterval(locator);
+    removeMarkerSelf();
 }
 
 //returns an index of friendUsers
@@ -651,6 +643,9 @@ function sleep(ms) {
 
 function initUIElements() {
     document.addEventListener('DOMContentLoaded', function() {
+        initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick);
+        initPostedLocationHistory();
+
         var elemsSelect = document.querySelectorAll('select');
         M.FormSelect.init(elemsSelect);
 

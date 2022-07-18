@@ -22,14 +22,16 @@ export class DateFormatter extends Date {
         return yyyy + '/' + mm + '/' + dd;
     }
 
-    getFormattedTime() {
+    getFormattedTime(sec) {
         let hh = this.getHours();
         let mm = this.getMinutes();
+        let ss = this.getSeconds();
 
         if (hh < 10) hh = '0' + hh;
         if (mm < 10) mm = '0' + mm;
+        if (ss < 10) ss = '0' + ss;
 
-        return hh + ":" + mm;
+        return hh + ":" + mm + (sec ? ":" + ss : "");
     }
 
     // TODO: expand for more validation

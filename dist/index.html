@@ -24,7 +24,28 @@
 </head>
 
 <body>
-	<header></header>
+	<header>
+		<div>
+			<p id="welcome-msg">Welcome <span id="user-name"></span></p>
+		</div>
+		<div id="posted-locations-container">
+			<button id="show-my-locations" class="waves-effect waves-light btn-floating btn-small green darken-2">99+</button>
+			<div id="posted-locations" class="collection hidden">
+				
+			</div>
+		</div>
+		<div>
+			<select id="transport-mode">
+				<option value="" selected disabled>Transport mode</option>
+				<option value="walking">Walking</option>
+				<option value="bicycle">Bicycle</option>
+				<option value="car">Car</option>
+			</select>
+		</div>
+		<div>
+			<button id="start-posting" class="waves-effect waves-light btn-small green darken-2">Post Location History</button>
+		</div>
+	</header>
 	<main>
 		<section id="login" class="over-screen">
 			<div id="login-box" class="center-align">
@@ -128,14 +149,14 @@
 					</li> -->
 				</ul>
 			</div>
-			<div id="post-location-item" class="sidebar-item">
+			<!-- <div id="post-location-item" class="sidebar-item">
 				<div class="center-align">
 					<button id="start-posting" class="waves-effect waves-light btn green darken-2">Post Location History</button>
 				</div>
 				<div id="posted-locations" class="collection">
-					<!-- <a href="#!" class="collection-item">test</a> -->
+					<a href="#!" class="collection-item">test</a>
 				</div>
-			</div>
+			</div> -->
 		</aside>
 
 		<section id="map-section">

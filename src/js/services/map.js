@@ -4,6 +4,8 @@ import { User } from "../models/user";
 
 let map;
 
+let markerSelf;
+
 // hashmap webid => marker
 let markers = new Map();
 
@@ -99,5 +101,24 @@ export function removeRouteFromUser(user) {
     if(routes.get(user.webid)) {
         map.removeLayer(routes.get(user.webid));
         routes.delete(user.webid);
+    }
+}
+
+export function createMarkerSelf(lat, long) {
+    if(markerSelf) {
+        // update
+        markerSelf.setLatLng([lat, long]);
+    } else {
+        // create
+        let myIcon = L.divIcon({className: 'marker-self'});
+        markerSelf = L.marker([lat, long], {icon: myIcon}).addTo(map);
+        moveMap({lat: lat, long: long}, 12);
+    }
+}
+
+export function removeMarkerSelf() {
+    if(markerSelf) {
+        map.removeLayer(markerSelf);
+        markerSelf = null;
     }
 }
