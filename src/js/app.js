@@ -556,32 +556,56 @@ async function createRequestNotifications() {
 // check every x seconds if the current position is changed. Only if it is changed post this new location
 async function startPostingLocations() {
     if (navigator.geolocation) {
-        clearInterval(locator);
-        locator = setInterval(() => {
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                // success
+        locator = navigator.geolocation.watchPosition(async (pos) => {
+            // success
 
-                // only if it is a new location
-                let latest_loc = currentUser.getLatestLocation();
-                if(!latest_loc || (latest_loc.timestamp < pos.timestamp && latest_loc.lat != pos.coords.latitude && latest_loc.long != pos.coords.longitude)) {
-                    currentUser.locations.push({lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp});
+            // only if it is a new location
+            let latest_loc = currentUser.getLatestLocation();
+            if(!latest_loc || (latest_loc.timestamp < pos.timestamp && latest_loc.lat != pos.coords.latitude && latest_loc.long != pos.coords.longitude)) {
+                currentUser.locations.push({lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp});
 
-                    addPostedLocationHistory(pos.coords.latitude, pos.coords.longitude, pos.timestamp);
-                    createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
+                addPostedLocationHistory(pos.coords.latitude, pos.coords.longitude, pos.timestamp);
+                createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
+
+                const platform = navigator.platform.split(" ").join('');
+                await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
+
+            }
+        }, (err) => {
+            //error
+            console.log('Unable to retrieve your location');
+        }, {
+            enableHighAccuracy: true,
+            timeout: Infinity,
+            maximumAge: 0
+        });
+
+        // clearInterval(locator);
+        // locator = setInterval(() => {
+        //     navigator.geolocation.getCurrentPosition(async (pos) => {
+        //         // success
+
+        //         // only if it is a new location
+        //         let latest_loc = currentUser.getLatestLocation();
+        //         if(!latest_loc || (latest_loc.timestamp < pos.timestamp && latest_loc.lat != pos.coords.latitude && latest_loc.long != pos.coords.longitude)) {
+        //             currentUser.locations.push({lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp});
+
+        //             addPostedLocationHistory(pos.coords.latitude, pos.coords.longitude, pos.timestamp);
+        //             createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
     
-                    const platform = navigator.platform.split(" ").join('');
-                    await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
+        //             const platform = navigator.platform.split(" ").join('');
+        //             await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
     
-                }
-            }, (err) => {
-                //error
-                console.log('Unable to retrieve your location');
-            }, {
-                enableHighAccuracy: true,
-                timeout: Infinity,
-                maximumAge: 0
-            });
-        }, 1000);
+        //         }
+        //     }, (err) => {
+        //         //error
+        //         console.log('Unable to retrieve your location');
+        //     }, {
+        //         enableHighAccuracy: true,
+        //         timeout: Infinity,
+        //         maximumAge: 0
+        //     });
+        // }, 1000);
         
        
     } else {
@@ -590,7 +614,11 @@ async function startPostingLocations() {
 }
 
 function stopPostingLocations() {
-    clearInterval(locator);
+
+    // clearInterval(locator);
+
+    navigator.geolocation.clearWatch(locator);
+
     removeMarkerSelf();
 }
 
