@@ -48,7 +48,7 @@ export function displayUserMenu(user, message) {
         return;
     
     nameField.innerHTML = user.name;
-    webidField.innerHTML = user.webid;
+    webidField.value = user.webid;
     oidcIssuerField.value = user.oidcIssuer;
     storageField.value = user.storage;
 

@@ -26,7 +26,7 @@ export function initPostedLocationHistory() {
 
     document.getElementById("show-my-locations").addEventListener("click", () => {
         let container = document.getElementById("posted-locations");
-        if(container.hasChildNodes()) {
+        if(postedLocations > 0) {
             if(container.classList.contains('hidden')) {
                 container.classList.remove('hidden');
             } else {

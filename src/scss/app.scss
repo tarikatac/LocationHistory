@@ -310,3 +310,7 @@ header > div:first-child {
     background-color: aqua;
     border-radius: 50%;
 }
+
+#user-options-name, .title {
+    overflow-wrap: break-word;
+}
