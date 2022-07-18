@@ -208,7 +208,7 @@ async function onRequestLocationClick(event) {
 }
 
 async function onUserMenuUpdateClick(event) {
-    const webid = document.getElementById("user-options-webid").innerHTML;
+    const webid = document.getElementById("user-options-webid").value;
     if(!webid) {
         setUserMenuErrorMessage("WebID is invalid.");
         return;
@@ -297,7 +297,7 @@ async function onUserMenuUpdateClick(event) {
 }
 
 async function onUserMenuDeleteClick(event) {
-    const webid = document.getElementById("user-options-webid").innerHTML;
+    const webid = document.getElementById("user-options-webid").value;
     if(!webid) {
         setUserMenuErrorMessage("WebID is invalid.");
         return;
