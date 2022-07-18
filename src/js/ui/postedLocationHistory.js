@@ -1,6 +1,8 @@
 import { moveMap } from "../services/map";
 import { DateFormatter } from "../models/dateFormatter";
 
+let postedLocations = 0;
+
 export function initPostedLocationHistory() {
     let container = document.getElementById("posted-locations-container");
     container.addEventListener('click', (e) => {
@@ -50,6 +52,14 @@ export function addPostedLocationHistory(lat, long, timestamp) {
     `;
     a.dataset.lat = lat;
     a.dataset.long = long;
+
+    postedLocations++;
+    if(postedLocations > 99) {
+        document.getElementById("show-my-locations").innerHTML = "99+";
+    } else {
+        document.getElementById("show-my-locations").innerHTML = postedLocations;
+    }
+    
 
     collection.insertBefore(a, collection.firstChild);
 }
