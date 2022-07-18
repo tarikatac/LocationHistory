@@ -258,6 +258,8 @@ async function onUserMenuUpdateClick(event) {
     if(friendUsers[i].displayMode != viewMode) {
         friendUsers[i].displayMode = viewMode;
     }
+
+    // TODO: Show loading when asking for a route
     
 
     // try to update the user when new issuer/storage was given
@@ -288,7 +290,6 @@ async function onUserMenuUpdateClick(event) {
             } catch(error) {
                 displayUserMenu(friendUser, error.message);
             }
-            
         }
     } else {
         await updateFriendsAccessRights();
@@ -373,8 +374,10 @@ async function handleRedirect() {
     try {
         currentUser = await handleRedirectAfterLogin();
 
-        if(currentUser === null)
+        if(currentUser === null) {
+            hideLoginLoadingScreen();
             return;
+        }
 
         document.getElementById("webid").value = currentUser.webid;
 
@@ -561,7 +564,7 @@ async function startPostingLocations() {
     let tm = document.getElementById("transport-mode").value;
     if(tm == 'walking' || tm == 'car' || tm == 'bicycle')
         currentUser.transportMode = document.getElementById("transport-mode").value;
-        
+
     if (navigator.geolocation) {
         locator = navigator.geolocation.watchPosition(async (pos) => {
             // success

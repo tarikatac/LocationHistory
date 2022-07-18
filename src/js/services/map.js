@@ -9,8 +9,14 @@ let markerSelf;
 // hashmap webid => marker
 let markers = new Map();
 
-// webid => polyline
+// webid => array of polylines
 let routes = new Map();
+
+const colors = {
+    walking: '#4CAF50',
+    bicycle: '#ff9800',
+    car: '#F44336'
+}
 
 export function initMap() {
     map = L.map('map');
@@ -19,6 +25,23 @@ export function initMap() {
     const tileURL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
     const tiles = L.tileLayer(tileURL, { attribution });
     tiles.addTo(map);
+
+    // create legend
+    let legend = L.control({position: 'bottomleft'});
+    legend.onAdd = function (map) {
+        let div = L.DomUtil.create('div', 'map-legend');
+
+        div.innerHTML = `
+            <strong>Transportmode</strong><br>
+            <i class='line green'></i> Walking<br>
+            <i class='line orange'></i> Bicycle<br>
+            <i class='line red'></i> Car<br>
+            <i class='line blue'></i> Other<br>
+        `;
+
+        return div;
+    };
+    legend.addTo(map);
 }
 
 export function createMarkerFromUser(loc, user) {
@@ -65,41 +88,54 @@ export function moveMap(loc, zoom) {
     map.setView([loc.lat, loc.long], zoom);
 }
 
+// returns the last point of the route
 export function createRouteFromUser(user, t1, t2) {
     if(!user)
         return;
 
-    //create polyline
-    let latlngs = [];
+    routes.set(user.webid, new Array());
 
-    if(t1 && t2) {
-        for(let loc of user.locations) {
-            if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
+    //create polyline for each transport mode part
+
+    let prevTransportMode;
+    let prevLoc;
+    let numberOfPolylines = 0;
+    let latlngs = [];
+    for(let loc of user.locations) {
+        if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
+            if(!prevTransportMode || prevTransportMode == loc.transportMode) {
+                latlngs.push([loc.lat, loc.long]);
+            } else {
+                routes.get(user.webid)
+                      .push(
+                        L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'})
+                         .addTo(map)
+                        );
+                latlngs = [[prevLoc.lat, prevLoc.long]];
                 latlngs.push([loc.lat, loc.long]);
             }
-            
-        }
-    } else {
-        for(let loc of user.locations) {
-            latlngs.push([loc.lat, loc.long]);
+            prevTransportMode = loc.transportMode;
+            prevLoc = loc;          
         }
     }
-
-    if(routes.get(user.webid)) {
-        //update polyline
-        routes.get(user.webid).setLatLngs(latlngs);
-    } else {
-        //new polyline
-        routes.set(user.webid, L.polyline(latlngs, {color: 'red'}).addTo(map));
-    }
+    routes.get(user.webid)
+            .push(
+            L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'})
+                .addTo(map)
+            );
+    
+    return latlngs.length > 0 ? latlngs[latlngs.length -1] : null;
 }
 
 export function removeRouteFromUser(user) {
     if(!user)
         return;
 
-    if(routes.get(user.webid)) {
-        map.removeLayer(routes.get(user.webid));
+    let rs = routes.get(user.webid);
+    if(rs) {
+        for(let polyline of rs) {
+            map.removeLayer(polyline);
+        }
         routes.delete(user.webid);
     }
 }

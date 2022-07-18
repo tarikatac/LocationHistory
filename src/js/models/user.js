@@ -22,7 +22,8 @@ export class User {
     // {
     //     lat,
     //     long,
-    //     timestamp
+    //     timestamp,
+    //     transportMode
     // }
     locations = [];
 

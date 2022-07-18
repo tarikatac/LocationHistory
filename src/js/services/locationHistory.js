@@ -380,9 +380,10 @@ export async function getLatestLocation(storage) {
     //---------------------------------------------------------------------------------------
     //Fetch the lat-long from the file corresponding to the latest timestamp
     const bindingsStream_1 = await myEngine.queryBindings(`
-        SELECT ?lat ?long WHERE {
-        ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
-            <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
+        SELECT ?lat ?long ?tm WHERE {
+            ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+            <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long .
+            OPTIONAL { ?s <https://w3id.org/transportmode#transportMode> ?tm. }
         }`, {
         sources: [`${container}${bindings[0].get('tmstmp').value}`],
         fetch: myfetchFunction,
@@ -391,11 +392,24 @@ export async function getLatestLocation(storage) {
 
     const bindings_1 = await bindingsStream_1.toArray();
 
+    let tm = null;
+    if(bindings_1[0].get('tm')) {
+        const val = bindings_1[0].get('tm').value.toLowerCase();
+        if(val.includes("walking")) {
+            tm = "walking";
+        } else if(val.includes("bicycling")) {
+            tm = "bicycle"
+        } else if(val.includes("car")) {
+            tm = "car";
+        }
+    }
+
     //Return the latest Latitude and Longitude:
     return {
         lat: bindings_1[0].get('lat').value,
         long: bindings_1[0].get('long').value,
-        timestamp: tmstmp
+        timestamp: tmstmp,
+        transportMode: tm
     };
 }
 
@@ -498,9 +512,10 @@ export async function getLocationsBetweenTimestamps(storage, t1, t2, excludes = 
 
         if(!excludes.includes(timestamp)) {
             const bindingsStream_1 = await myEngine.queryBindings(`
-                SELECT ?lat ?long WHERE {
-                ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
-                    <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long
+                SELECT ?lat ?long ?tm WHERE {
+                    ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+                    <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+                    OPTIONAL { ?s <https://w3id.org/transportmode#transportMode> ?tm. }
                 }`, {
                 sources: [`${container}${timestamp}`],
                 fetch: myfetchFunction,
@@ -509,13 +524,26 @@ export async function getLocationsBetweenTimestamps(storage, t1, t2, excludes = 
 
             const bindings_1 = await bindingsStream_1.toArray();
 
+            let tm = null;
+            if(bindings_1[0].get('tm')) {
+                const val = bindings_1[0].get('tm').value.toLowerCase();
+                if(val.includes("walking")) {
+                    tm = "walking";
+                } else if(val.includes("bicycling")) {
+                    tm = "bicycle"
+                } else if(val.includes("car")) {
+                    tm = "car";
+                }
+            }
+
             locations.push({
                 lat: bindings_1[0].get('lat').value,
                 long: bindings_1[0].get('long').value,
-                timestamp: timestamp
+                timestamp: timestamp,
+                transportMode: tm
             });
         }
     }
-
+    
     return locations;
 }

@@ -314,3 +314,21 @@ header > div:first-child {
 #user-options-name, .title {
     overflow-wrap: break-word;
 }
+
+.map-legend {
+    border-radius: 5px;
+    background-color: $background-main-color;
+    padding: 10px;
+}
+
+.line {
+    height: 7px;
+    width: 15px;
+    border-radius: 5px;
+    display: inline-block;
+    margin-right: 5px;
+}
+
+strong {
+    font-weight: 700;
+}
