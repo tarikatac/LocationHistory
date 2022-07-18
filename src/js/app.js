@@ -397,6 +397,8 @@ async function handleRedirect() {
     //successful login, start checking for notifications and friends periodically
     mainLoop();
 
+    document.getElementById("user-name").innerHTML = currentUser.name;
+
     hideLoginLoadingScreen();
     hideLoginScreen();
 }
