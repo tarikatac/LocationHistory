@@ -257,10 +257,7 @@ async function onUserMenuUpdateClick(event) {
     // check if viewmode is changed
     if(friendUsers[i].displayMode != viewMode) {
         friendUsers[i].displayMode = viewMode;
-    }
-
-    // TODO: Show loading when asking for a route
-    
+    }    
 
     // try to update the user when new issuer/storage was given
     if(oidcIssuer != friendUsers[i].oidcIssuer || storage != friendUsers[i].storage) {
@@ -283,18 +280,26 @@ async function onUserMenuUpdateClick(event) {
                 displayUserMenu(friendUsers[i], error.message);
             }
             await updateFriendsAccessRights();
-            await updateMap();
         } else {
             try {
                 await addFriend(friendUsers.splice(i, 1)[0]);
             } catch(error) {
                 displayUserMenu(friendUser, error.message);
             }
+            return;
         }
-    } else {
-        await updateFriendsAccessRights();
-        await updateMap();
-    }            
+    }
+
+    if(friendUsers[i].displayMode == 'route') {
+        updateFriendsCard(friendUsers[i], 'loadingRoute');
+    }
+
+    try {
+        await updateMap();  
+    } catch(error) {
+        console.log(error);
+        updateFriendsCard(friendUsers[i], 'done');
+    }           
 }
 
 async function onUserMenuDeleteClick(event) {
@@ -459,6 +464,8 @@ async function updateMap() {
                         friendUsers[i].addLocations(locs);
 
                         createRouteFromUser(friendUsers[i], friendUsers[i].displayTimeFrom, friendUsers[i].displayTimeTo);
+
+                        updateFriendsCard(friendUsers[i], 'loadingRouteDone');
                     }
 
                     // move the map to the first friend you have access to

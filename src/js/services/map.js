@@ -1,6 +1,7 @@
 import "leaflet";
 
 import { User } from "../models/user";
+import { DateFormatter } from "../models/dateFormatter";
 
 let map;
 
@@ -32,7 +33,7 @@ export function initMap() {
         let div = L.DomUtil.create('div', 'map-legend');
 
         div.innerHTML = `
-            <strong>Transportmode</strong><br>
+            <strong>Transport mode</strong><br>
             <i class='line green'></i> Walking<br>
             <i class='line orange'></i> Bicycle<br>
             <i class='line red'></i> Car<br>
@@ -101,28 +102,34 @@ export function createRouteFromUser(user, t1, t2) {
     let prevLoc;
     let numberOfPolylines = 0;
     let latlngs = [];
+    let startTimeSegment;
     for(let loc of user.locations) {
         if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
+            if(!startTimeSegment)
+                startTimeSegment = (new DateFormatter(Number(loc.timestamp))).getFormattedTime();
+
             if(!prevTransportMode || prevTransportMode == loc.transportMode) {
                 latlngs.push([loc.lat, loc.long]);
             } else {
-                routes.get(user.webid)
-                      .push(
-                        L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'})
-                         .addTo(map)
-                        );
+                let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
+                let tooltip = `${user.name} | ${prevLoc.transportMode} | ${startTimeSegment} > ${(new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime()}`;
+
+                polyline.bindTooltip(tooltip).openTooltip();
+                routes.get(user.webid).push(polyline.addTo(map));
+
                 latlngs = [[prevLoc.lat, prevLoc.long]];
+                startTimeSegment = (new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime();
+
                 latlngs.push([loc.lat, loc.long]);
             }
             prevTransportMode = loc.transportMode;
             prevLoc = loc;          
         }
     }
-    routes.get(user.webid)
-            .push(
-            L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'})
-                .addTo(map)
-            );
+    let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
+    let tooltip = `${user.name} | ${prevLoc.transportMode} | ${startTimeSegment} > ${(new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime()}`;
+    polyline.bindTooltip(tooltip).openTooltip();
+    routes.get(user.webid).push(polyline.addTo(map));
     
     return latlngs.length > 0 ? latlngs[latlngs.length -1] : null;
 }
@@ -146,7 +153,7 @@ export function createMarkerSelf(lat, long) {
         markerSelf.setLatLng([lat, long]);
     } else {
         // create
-        let myIcon = L.divIcon({className: 'marker-self'});
+        let myIcon = L.divIcon({className: 'dummy', html: '<div class="marker-self"><div></div></div>'});
         markerSelf = L.marker([lat, long], {icon: myIcon}).addTo(map);
         moveMap({lat: lat, long: long}, 12);
     }

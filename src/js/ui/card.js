@@ -4,8 +4,11 @@ const statusMessage = {
     pending : 'Awaiting approval',
     error: 'Error: click for more info',
     revoked : 'No access rights',
-    done: 'Shared location'
+    done: 'Shared location',
+    loadingRoute: 'Loading route'
 }
+
+const friendStatus = new Map();
 
 // TODO: make card show user info like name, img etc. and a status under it
 export function addFriendsCard(user, onFriendsCardClick, onCheckboxChange, status = 'pending') {
@@ -46,6 +49,8 @@ export function addFriendsCard(user, onFriendsCardClick, onCheckboxChange, statu
 
         li.addEventListener('click', onFriendsCardClick);
     }
+
+    friendStatus.set(user.webid, status);
 }
 
 export function updateFriendsCard(user, status = 'done') {
@@ -60,32 +65,43 @@ export function updateFriendsCard(user, status = 'done') {
         if(!checkbox_container || !bar || !p)
             return;
         
-        switch (status) {
-            case 'pending':
-                p.classList.remove("error-font");
-                checkbox_container.classList.add("hidden");
-                bar.classList.remove("hidden");
-                break;
-            case 'error':
-                p.classList.add("error-font");
-                checkbox_container.classList.add("hidden");
-                bar.classList.add("hidden");
-                break;
-            case 'revoked':
-                p.classList.add("error-font");
-                checkbox_container.classList.remove("hidden");
-                bar.classList.add("hidden");
-                break;
-            case 'done':
-            default:
-                p.classList.remove("error-font");
-                checkbox_container.classList.remove("hidden");
-                bar.classList.add("hidden");
-                break;
+
+        if(status == 'loadingRouteDone') {
+            status = 'done';
+            friendStatus.set(user.webid, status);
         }
 
-        p.innerText = statusMessage[status];
+        if(status == 'pending' || status == 'loadingRoute' || friendStatus.get(user.webid) == 'loadingRoute') {
+            p.classList.remove("error-font");
+            checkbox_container.classList.add("hidden");
+            bar.classList.remove("hidden");
+        } else if(status == 'error') {
+            p.classList.add("error-font");
+            checkbox_container.classList.add("hidden");
+            bar.classList.add("hidden");
+        } else if(status == 'revoked') {
+            p.classList.add("error-font");
+            checkbox_container.classList.remove("hidden");
+            bar.classList.add("hidden");
+        } else if (status == 'done') {
+            p.classList.remove("error-font");
+            checkbox_container.classList.remove("hidden");
+            bar.classList.add("hidden");
+        }
+
+        if(friendStatus.get(user.webid) != 'loadingRoute' || status == 'loadingRoute') {
+            p.innerText = statusMessage[status];
+        }
+
+        if(friendStatus.get(user.webid) == 'loadingRoute') {
+            friendStatus.set(user.webid, 'loadingRoute');
+        } else {
+            friendStatus.set(user.webid, status);
+        }
+
     }
+
+    
 }
 
 export function removeFriendsCard(user) {

@@ -1,8 +1,11 @@
 export class DateFormatter extends Date {
 
     constructor(dateString, timeString) {
-        if(!dateString || !timeString) {
+        if(!dateString && !timeString) {
             super();
+            return;
+        } else if(!timeString) {
+            super(dateString);
             return;
         }
         
