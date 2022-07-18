@@ -12,6 +12,7 @@ export class User {
     showLocation = true;
     statusMessage;
     isRemoved = false;
+    transportMode;
 
     // marker or route
     displayMode = 'marker';

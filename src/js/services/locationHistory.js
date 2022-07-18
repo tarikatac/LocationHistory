@@ -399,8 +399,24 @@ export async function getLatestLocation(storage) {
     };
 }
 
-export async function putNewLocation(webid, storage, loc, platform) {
+export async function putNewLocation(webid, storage, loc, platform, transportMode) {
     const container = storage + container_path;
+    
+    let transportModeString;
+    switch (transportMode) {
+        case 'walking':
+            transportModeString = 'tm:transportMode tm:Walking.';
+            break;
+        case 'bicycle':
+            transportModeString = 'tm:transportMode tm:Bicycling.';
+            break;
+        case 'car':
+            transportModeString = 'tm:transportMode tm:CarDriving.';
+            break;
+        default:
+            break;
+    }
+
     const query = `@prefix sosa: <http://www.w3.org/ns/sosa/>.
         @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
@@ -427,7 +443,8 @@ export async function putNewLocation(webid, storage, loc, platform) {
 
         <_result> a sosa:Result;
         wgs84:long ${loc.long};
-        wgs84:lat ${loc.lat}.
+        wgs84:lat ${loc.lat} ${transportModeString ? ";" : "."}
+        ${transportModeString ? transportModeString : ""}
 
         <location> a sosa:ObservableProperty;
         rdfs:label "Location"@en .

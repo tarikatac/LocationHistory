@@ -557,6 +557,11 @@ async function createRequestNotifications() {
 
 // check every x seconds if the current position is changed. Only if it is changed post this new location
 async function startPostingLocations() {
+
+    let tm = document.getElementById("transport-mode").value;
+    if(tm == 'walking' || tm == 'car' || tm == 'bicycle')
+        currentUser.transportMode = document.getElementById("transport-mode").value;
+        
     if (navigator.geolocation) {
         locator = navigator.geolocation.watchPosition(async (pos) => {
             // success
@@ -570,7 +575,7 @@ async function startPostingLocations() {
                 createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
 
                 const platform = navigator.platform.split(" ").join('');
-                await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
+                await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform, currentUser.transportMode);
 
             }
         }, (err) => {
