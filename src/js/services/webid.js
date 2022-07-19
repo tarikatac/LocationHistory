@@ -77,7 +77,7 @@ export async function getUserDataFromWebID(webid) {
             return {
                 givenName: bindings[0].get('givenName') ? bindings[0].get('givenName').value : null,
                 familyName: bindings[0].get('familyName') ? bindings[0].get('familyName').value : null,
-                img: bindings[0].get('img') ? bindings[0].get('familyName').value : null
+                img: bindings[0].get('img') ? bindings[0].get('img').value : null
             };
         return null;
 

@@ -59,13 +59,8 @@ export function createMarkerFromUser(loc, user) {
                 friendMarker = L.marker([loc.lat, loc.long]);
             }
             else {
-                let friend_image = L.icon({
-                    iconUrl: user.img,
-                    iconSize: [30, 30], // size of the icon
-                    iconAnchor: [15, 15] // point of the icon which will correspond to marker's location
-                });
+                let friend_image = L.divIcon({className: 'dummy', html: `<div class="friend-marker"><img src="${user.img}"></img></div>`});
                 friendMarker = L.marker([loc.lat, loc.long], { icon: friend_image });
-                friendMarker._icon.classList.add("huechange");
             }
 
             let tooltip = `${user.name} Last seen at ${new Date(Number(loc.timestamp)).toLocaleString()}`;

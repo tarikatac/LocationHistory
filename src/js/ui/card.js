@@ -2,7 +2,7 @@ import { User } from "../models/user";
 
 const statusMessage = {
     pending : 'Awaiting approval',
-    error: 'Error: click for more info',
+    error: 'This user did not use this application yet',
     revoked : 'No access rights',
     done: 'Shared location',
     loadingRoute: 'Loading route'

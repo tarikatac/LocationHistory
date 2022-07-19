@@ -10,7 +10,7 @@ export function setLoginLoadingMessage(text) {
 }
 
 export function displayLoginLoadingScreen() {
-    hideExtraLogin();
+    // hideExtraLogin();
     document.getElementById("login-loading").classList.remove("hidden");
     document.getElementById("login-content").classList.add("invisible");
 }

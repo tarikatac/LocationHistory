@@ -3,8 +3,6 @@ import { DateFormatter } from "../models/dateFormatter";
 let user_menu;
 let nameField;
 let webidField;
-let oidcIssuerField;
-let storageField;
 let viewModeField;
 let fromDayField;
 let fromTimeField;
@@ -22,8 +20,6 @@ export function initUserMenu(onUserMenuUpdateClick, onUserMenuDeleteClick) {
 
     nameField = document.getElementById("user-options-name");
     webidField = document.getElementById("user-options-webid");
-    oidcIssuerField = document.getElementById("user-options-oidcIssuer");
-    storageField = document.getElementById("user-options-storage");
     updateButton = document.getElementById("user-options-update");
     deleteButton = document.getElementById("user-options-delete");
     errorField = document.getElementById("user-options-error");
@@ -49,8 +45,6 @@ export function displayUserMenu(user, message) {
     
     nameField.innerHTML = user.name;
     webidField.value = user.webid;
-    oidcIssuerField.value = user.oidcIssuer;
-    storageField.value = user.storage;
 
     fromDayField.value = user.displayTimeFrom.getFormattedDate();
     toDayField.value = user.displayTimeTo.getFormattedDate();

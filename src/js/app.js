@@ -22,7 +22,8 @@ import {
     getAccessGrantedNotifications,
     getLatestLocation,
     putNewLocation,
-    getLocationsBetweenTimestamps
+    getLocationsBetweenTimestamps,
+    checkInbox
 } from "./services/locationHistory";
 
 // ui elements imports
@@ -73,60 +74,47 @@ async function onLoginClick(event) {
         let webid = document.getElementById('webid').value.trim();
         if(!webid) throw new Error("WebID is invalid");
 
-        let oidcIssuer = document.getElementById('oidcIssuer').value.trim();
-        let storage = document.getElementById('storage').value.trim();
-        document.getElementById('oidcIssuer').value = null;
-        document.getElementById('storage').value = null;
+        let oidcIssuer = await getIssuerFromWebID(webid);
 
         if(!oidcIssuer) {
-            oidcIssuer = await getIssuerFromWebID(webid);
+            setLoginMessage("Could not find an OpenID Provider for authentication");
+            hideLoginLoadingScreen();
+            return;
         }
 
-        if(!storage) {
-            storage = await getStorageFromWebID(webid);
-        }
+        // if(!storage) {
+        //     setLoginMessage("Could not find an OpenID Provider for authentication");
+        //     hideLoginLoadingScreen();
+        //     return;
+        // }
 
-        // if the storage or oidcIssuer triple was not found in the pod ask to fill it in
-        if(!oidcIssuer || !storage) {
-            if(!oidcIssuer && !storage) {
-                setLoginMessage("pim:storage & solid:oidcIssuer location was not found in pod");
-            } else if (!storage) {
-                setLoginMessage("pim:storage location was not found in pod");
-            } else if (!oidcIssuer) {
-                setLoginMessage("solid:oidcIssuer location was not found in pod");
-            }
-            displayExtraLogin(oidcIssuer, storage);
-        } else {
-            let userData = await getUserDataFromWebID(webid);
+        let userData = await getUserDataFromWebID(webid);
 
-            // add trailing '/' for urls
-            if (oidcIssuer && oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
-            if (storage && storage.substr(-1) != '/') storage += '/';
+        currentUser = new User(webid);
+        currentUser.oidcIssuer = oidcIssuer;
 
-            currentUser = new User(webid);
-            currentUser.oidcIssuer = oidcIssuer;
-            currentUser.storage = storage;
+        if(userData) {
             currentUser.givenName = userData.givenName;
             currentUser.familyName = userData.familyName;
             currentUser.img = userData.img;
+        }
 
-            console.log(currentUser);
-            
-            setLoginLoadingMessage("Logging in to Solid client...");
-            
-            // try login, if login failed: check if this user is already logged in.
-            if(!await loginUser(currentUser)) {
-                console.log(isLoggedIn(currentUser));
-                // if this user is already logged in go immediatly to handleRedirect to handle this login
-                // if this user is not yet logged in the previouse user will be logged out so the new one can log in
-                if(isLoggedIn(currentUser.webid)) {
-                    await handleRedirect();
-                } else {
-                    // TODO: there is an error when you first login with another user on the same oidcIssuer and then call logout
-                    // the next login will login the previous user if the oidcIssuer logs you in automatic.
-                    await logoutUser();
-                    await loginUser(currentUser);
-                }
+        console.log(currentUser);
+        
+        setLoginLoadingMessage("Logging in to Solid client...");
+        
+        // try login, if login failed: check if this user is already logged in.
+        if(!await loginUser(currentUser)) {
+            console.log(isLoggedIn(currentUser));
+            // if this user is already logged in go immediatly to handleRedirect to handle this login
+            // if this user is not yet logged in the previouse user will be logged out so the new one can log in
+            if(isLoggedIn(currentUser.webid)) {
+                await handleRedirect();
+            } else {
+                // TODO: there is an error when you first login with another user on the same oidcIssuer and then call logout
+                // the next login will login the previous user if the oidcIssuer logs you in automatic.
+                await logoutUser();
+                await loginUser(currentUser);
             }
         }
         
@@ -218,13 +206,6 @@ async function onUserMenuUpdateClick(event) {
     // find the user
     const i = friendUsers.findIndex(f => f.webid == webid);
 
-    let oidcIssuer = document.getElementById("user-options-oidcIssuer").value.trim();
-    let storage = document.getElementById("user-options-storage").value.trim();
-
-    // add trailing '/' for urls
-    if (oidcIssuer && oidcIssuer.substr(-1) != '/') oidcIssuer += '/';
-    if (storage && storage.substr(-1) != '/') storage += '/';
-
     // get view mode
     let viewMode = document.getElementById("user-options-view-mode").value;
 
@@ -253,38 +234,7 @@ async function onUserMenuUpdateClick(event) {
         
         friendUsers[i].displayTimeFrom = new DateFormatter(fromDay, fromTime);
         friendUsers[i].displayTimeTo = new DateFormatter(toDay, toTime);
-    }  
-
-    // try to update the user when new issuer/storage was given
-    if(oidcIssuer != friendUsers[i].oidcIssuer || storage != friendUsers[i].storage) {
-        // update the friend
-        friendUsers[i].oidcIssuer = oidcIssuer;
-        friendUsers[i].storage = storage;
-
-        updateFriendsCard(friendUsers[i], 'pending');
-
-        let friendUser = friendUsers[i];
-
-        // only send the notification if the friendUser is complete
-        if(friendUsers[i].isUsable()) {
-            try {
-                await sendNotification(currentUser.webid, friendUsers[i].storage);
-                friendUsers[i].statusMessage = null;
-                displayUserMenu(friendUsers[i], 'Press update to apply changes');
-            } catch(error) {
-                friendUsers[i].statusMessage = error.message;
-                displayUserMenu(friendUsers[i], error.message);
-            }
-            await updateFriendsAccessRights();
-        } else {
-            try {
-                await addFriend(friendUsers.splice(i, 1)[0]);
-            } catch(error) {
-                displayUserMenu(friendUser, error.message);
-            }
-            return;
-        }
-    }
+    } 
 
     // check if viewmode is changed
     friendUsers[i].displayMode = viewMode;
@@ -296,7 +246,7 @@ async function onUserMenuUpdateClick(event) {
     friendUsers[i].showLocation = true;
 
     // show the location/route of the user
-    if(friendUsers[i].showLocation && friendUsers[i].oidcIssuer && friendUsers[i].storage) {
+    if(friendUsers[i].showLocation && friendUsers[i].isUsable()) {
         try {
             removeMarkerFromUser(friendUsers[i]);
             removeRouteFromUser(friendUsers[i]);
@@ -408,7 +358,27 @@ async function handleRedirect() {
         document.getElementById("webid").value = currentUser.webid;
 
         setLoginLoadingMessage("Creating inbox...");
-        await createInbox(currentUser.storage);
+
+        // try the issuer as storage location, if not possible try to find another storage location
+        let storage;
+        try {
+            await createInbox(currentUser.oidcIssuer);
+            storage = currentUser.oidcIssuer;
+        } catch(error) {
+            console.log("Could not use solid:oidcIssuer as storage");
+
+            try {
+                storage = await getStorageFromWebID(currentUser.webid);
+                await createInbox(storage);
+            } catch(error) {
+                setLoginMessage("Could not find/access any storage location! This is used to store your location history.");
+                hideLoginLoadingScreen();
+                return;
+            }
+        }
+
+        currentUser.storage = storage;
+
 
         setLoginLoadingMessage("Setting inbox permissions...");
         await givePublicAccesstotheInbox(currentUser.storage);
@@ -547,6 +517,7 @@ async function updateFriendsAccessRights() {
                     index = await addFriend(friend.webid);
                 } catch(error) {
                     console.log(error);
+                    return;
                 }
                 
                 // only set hasaccess when the friendUser is complete
@@ -695,27 +666,28 @@ async function addFriend(webid) {
         i = friendUsers.push(friendUser) - 1;
     }
 
-    
-
     addFriendsCard(friendUser, onFriendsCardClick, onCheckboxChange, 'pending');
 
-    if(!friendUser.isUsable()) {
-        updateFriendsCard(friendUser, 'error');
-
-        let msg;
-        if(!friendUser.oidcIssuer && !friendUser.storage) {
-            msg = "Could not access solid:oidcIssuer & pim:storage";
-        } else if(!friendUser.oidcIssuer) {
-            msg = "Could not access solid:oidcIssuer";
-        } else if (!friendUser.storage) {
-            msg = "Could not access pim:storage";
+    // try to get the storage location by finding the inbox
+    let storage = null;
+    try {
+        if(await checkInbox(friendUsers[i].oidcIssuer)) {
+            storage = friendUsers[i].oidcIssuer;
+        } else if(await checkInbox(friendUsers[i].storage)) {
+            storage = friendUsers[i].storage;
+        } else {
+            throw new Error('Could not find a storage location with an inbox. He might not have used this application yet.');
         }
-        friendUsers[i].statusMessage = msg;
-        displayUserMenu(friendUser, msg);
-        
-    } else {
-        updateFriendsCard(friendUser, 'done');
+    } catch(error) {
+        updateFriendsCard(friendUser, 'error');
+        friendUsers[i].statusMessage = 'Could not find a storage location with an inbox. He might not have used this application yet.';
+        displayUserMenu(friendUser, friendUsers[i].statusMessage);
+        throw new Error('Could not find a storage location with an inbox. He might not have used this application yet.');
     }
+
+    friendUsers[i].storage = storage;
+    
+    updateFriendsCard(friendUser, 'done');
 
     return i;
 }

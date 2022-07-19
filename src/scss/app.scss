@@ -332,3 +332,17 @@ header > div:first-child {
 strong {
     font-weight: 700;
 }
+
+.friend-marker { 
+    display: inline-block;
+    border-radius: 50%;
+    overflow: hidden;
+    width: 25px;
+    height: 25px;
+    border: 2px solid #4287f5;
+}
+.friend-marker img { 
+    width:100%;
+    height:100%;
+    object-fit: cover; 
+}

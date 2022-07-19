@@ -18,6 +18,26 @@ async function myfetchFunction(url) {
     });
 }
 
+export async function checkInbox(storage) {
+    if(!storage)
+        return false;
+
+    const file = storage + inbox_file;
+    let response_;
+    try {
+        // Send a GET request to check if inbox exists
+        response_ = await solidfetch(file, {
+            method: 'GET',
+            headers: { 'Content-Type': 'text/turtle' },
+            credentials: 'include'
+        });
+    } catch (error) {
+        throw new Error("Could not access inbox");
+    }
+
+    return (200 <= response_.status && response_.status < 300);
+}
+
 export async function createInbox(user_storage) {
     const file = user_storage + inbox_file;
 
@@ -30,7 +50,7 @@ export async function createInbox(user_storage) {
             credentials: 'include'
         });
     } catch (error) {
-        throw new Error("Could not access pim:storage");
+        throw new Error("Could not access storage");
     }
 
     if (300 < response_.status && response_.status < 500) {
@@ -45,11 +65,11 @@ export async function createInbox(user_storage) {
                 credentials: 'include'
             });
         } catch (error) {
-            throw new Error("Could not access pim:storage");
+            throw new Error("Could not access storage");
         }
 
         if (response.status >= 400) {
-            throw new Error("Could not create inbox.ttl, check pim:storage");
+            throw new Error("Could not create inbox in your storage");
         }
     }
 }
