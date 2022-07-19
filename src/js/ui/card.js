@@ -65,7 +65,6 @@ export function updateFriendsCard(user, status = 'done') {
         if(!checkbox_container || !bar || !p)
             return;
         
-
         if(status == 'loadingRouteDone') {
             status = 'done';
             friendStatus.set(user.webid, status);
@@ -75,7 +74,13 @@ export function updateFriendsCard(user, status = 'done') {
             p.classList.remove("error-font");
             checkbox_container.classList.add("hidden");
             bar.classList.remove("hidden");
-        } else if(status == 'error') {
+        } else if (status == 'done') {
+            p.classList.remove("error-font");
+            checkbox_container.classList.remove("hidden");
+            bar.classList.add("hidden");
+        }
+
+        if(status == 'error') {
             p.classList.add("error-font");
             checkbox_container.classList.add("hidden");
             bar.classList.add("hidden");
@@ -83,17 +88,13 @@ export function updateFriendsCard(user, status = 'done') {
             p.classList.add("error-font");
             checkbox_container.classList.remove("hidden");
             bar.classList.add("hidden");
-        } else if (status == 'done') {
-            p.classList.remove("error-font");
-            checkbox_container.classList.remove("hidden");
-            bar.classList.add("hidden");
         }
 
-        if(friendStatus.get(user.webid) != 'loadingRoute' || status == 'loadingRoute') {
+        if(friendStatus.get(user.webid) != 'loadingRoute' || status == 'loadingRoute' || status == 'error' || status == 'revoked') {
             p.innerText = statusMessage[status];
         }
 
-        if(friendStatus.get(user.webid) == 'loadingRoute') {
+        if(friendStatus.get(user.webid) == 'loadingRoute' && status != 'error' && status != 'revoked') {
             friendStatus.set(user.webid, 'loadingRoute');
         } else {
             friendStatus.set(user.webid, status);

@@ -151,6 +151,7 @@ async function onCheckboxChange(event) {
         } else {
             friendUsers[i].showLocation = false;
             removeMarkerFromUser(friendUsers[i]);
+            removeRouteFromUser(friendUsers[i]);
         }
     }
 }
@@ -252,12 +253,7 @@ async function onUserMenuUpdateClick(event) {
         
         friendUsers[i].displayTimeFrom = new DateFormatter(fromDay, fromTime);
         friendUsers[i].displayTimeTo = new DateFormatter(toDay, toTime);
-    }
-
-    // check if viewmode is changed
-    if(friendUsers[i].displayMode != viewMode) {
-        friendUsers[i].displayMode = viewMode;
-    }    
+    }  
 
     // try to update the user when new issuer/storage was given
     if(oidcIssuer != friendUsers[i].oidcIssuer || storage != friendUsers[i].storage) {
@@ -290,16 +286,40 @@ async function onUserMenuUpdateClick(event) {
         }
     }
 
-    if(friendUsers[i].displayMode == 'route') {
-        updateFriendsCard(friendUsers[i], 'loadingRoute');
-    }
+    // check if viewmode is changed
+    friendUsers[i].displayMode = viewMode;
 
-    try {
-        await updateMap();  
-    } catch(error) {
-        console.log(error);
-        updateFriendsCard(friendUsers[i], 'done');
-    }           
+    // set the checkbox to checked
+    let li = document.getElementById("card_" + friendUsers[i].webid);
+    let checkbox = li.querySelector('div>label>input');
+    checkbox.checkbox = true;
+    friendUsers[i].showLocation = true;
+
+    // show the location/route of the user
+    if(friendUsers[i].showLocation && friendUsers[i].oidcIssuer && friendUsers[i].storage) {
+        try {
+            removeMarkerFromUser(friendUsers[i]);
+            removeRouteFromUser(friendUsers[i]);
+
+            if(friendUsers[i].displayMode == 'route') {
+                updateFriendsCard(friendUsers[i], 'loadingRoute');    
+            }
+    
+            let loc = await showUserLocation(i); 
+    
+            if(friendUsers[i].displayMode == 'route') {
+                updateFriendsCard(friendUsers[i], 'loadingRouteDone');
+            }
+
+            if(loc) {
+                moveMap(loc, 10);
+            }
+        } catch(error) {
+            console.log(error);
+            updateFriendsCard(friendUsers[i], 'done');
+        } 
+        
+    }         
 }
 
 async function onUserMenuDeleteClick(event) {
@@ -319,6 +339,7 @@ async function onUserMenuDeleteClick(event) {
 
     removeFriendsCard(friendUser);
     removeMarkerFromUser(friendUser);
+    removeRouteFromUser(friendUser);
     hideUserMenu();
 }
 
@@ -431,50 +452,7 @@ async function updateMap() {
 
     for(let i in friendUsers) {
         if(friendUsers[i].isUsable() && friendUsers[i].hasAccess) {
-
-            let loc;
-            try {
-                loc = await getLatestLocation(friendUsers[i].storage);
-            } catch (error) {
-                updateFriendsCard(friendUsers[i], 'error', 'Failed retrieving location data');
-                return;
-            }
-
-            if(loc) {
-                
-                // only if it is a new location => push to array and create marker
-                let latest_loc = friendUsers[i].getLatestLocation();
-                if(!latest_loc || latest_loc.timestamp < loc.timestamp) {
-                    friendUsers[i].locations.push(loc);
-                }
-
-                // if checkbox is not checked it will not show the marker on the map
-                if(friendUsers[i].showLocation) {
-                    if(friendUsers[i].displayMode == 'marker') {
-                        removeRouteFromUser(friendUsers[i]);
-
-                        createMarkerFromUser(loc, friendUsers[i]);
-                    } else if(friendUsers[i].displayMode == 'route') {
-                        removeMarkerFromUser(friendUsers[i]);
-
-                        // check if these locations are already stored, then we dont need to retrieve them again
-                        let locs = friendUsers[i].getLocations(friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime());
-                        locs = await getLocationsBetweenTimestamps(friendUsers[i].storage, friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime(), locs.map(x => x.timestamp));
-
-                        friendUsers[i].addLocations(locs);
-
-                        createRouteFromUser(friendUsers[i], friendUsers[i].displayTimeFrom, friendUsers[i].displayTimeTo);
-
-                        updateFriendsCard(friendUsers[i], 'loadingRouteDone');
-                    }
-
-                    // move the map to the first friend you have access to
-                    if(first_time) {
-                        moveMap(loc, 9);
-                        first_time = false;
-                    }
-                }
-            }
+            await showUserLocation(i);            
         }
 
         // if checkbox is unchecked do not show the marker
@@ -484,6 +462,54 @@ async function updateMap() {
         }
     }
 }
+
+async function showUserLocation(i) {
+    let loc;
+    try {
+        loc = await getLatestLocation(friendUsers[i].storage);
+    } catch (error) {
+        updateFriendsCard(friendUsers[i], 'error', 'Failed retrieving location data');
+        return;
+    }
+
+    if(loc) {
+        
+        // only if it is a new location => push to array and create marker
+        let latest_loc = friendUsers[i].getLatestLocation();
+        if(!latest_loc || latest_loc.timestamp < loc.timestamp) {
+            friendUsers[i].locations.push(loc);
+        }
+
+        // if checkbox is not checked it will not show the marker on the map
+        if(friendUsers[i].showLocation) {
+            if(friendUsers[i].displayMode == 'marker') {
+                removeRouteFromUser(friendUsers[i]);
+
+                createMarkerFromUser(loc, friendUsers[i]);
+            } else if(friendUsers[i].displayMode == 'route') {
+                removeMarkerFromUser(friendUsers[i]);
+
+                // check if these locations are already stored, then we dont need to retrieve them again
+                let locs = friendUsers[i].getLocations(friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime());
+                locs = await getLocationsBetweenTimestamps(friendUsers[i].storage, friendUsers[i].displayTimeFrom.getTime(), friendUsers[i].displayTimeTo.getTime(), locs.map(x => x.timestamp));
+
+                friendUsers[i].addLocations(locs);
+
+                loc = createRouteFromUser(friendUsers[i], friendUsers[i].displayTimeFrom, friendUsers[i].displayTimeTo);
+
+                updateFriendsCard(friendUsers[i], 'loadingRouteDone');
+            }
+
+            // move the map to the first friend you have access to
+            if(first_time) {
+                moveMap(loc, 9);
+                first_time = false;
+            }
+        }
+    }
+
+    return loc;
+} 
 
 async function updateFriendsAccessRights() {
     let haveAccess;
@@ -566,15 +592,19 @@ async function createRequestNotifications() {
 }
 
 // check every x seconds if the current position is changed. Only if it is changed post this new location
-async function startPostingLocations() {
-
-    let tm = document.getElementById("transport-mode").value;
-    if(tm == 'walking' || tm == 'car' || tm == 'bicycle')
-        currentUser.transportMode = document.getElementById("transport-mode").value;
+async function startPostingLocations() {        
 
     if (navigator.geolocation) {
         locator = navigator.geolocation.watchPosition(async (pos) => {
             // success
+
+            // get current transport mode
+            let tm = document.getElementById("transport-mode").value;
+            if(tm == 'walking' || tm == 'car' || tm == 'bicycle') {
+                currentUser.transportMode = document.getElementById("transport-mode").value;
+            } else {
+                currentUser.transportMode = 'other';
+            }
 
             // only if it is a new location
             let latest_loc = currentUser.getLatestLocation();
@@ -602,6 +632,14 @@ async function startPostingLocations() {
         //     navigator.geolocation.getCurrentPosition(async (pos) => {
         //         // success
 
+        //         // get current transport mode
+        //         let tm = document.getElementById("transport-mode").value;
+        //         if(tm == 'walking' || tm == 'car' || tm == 'bicycle') {
+        //             currentUser.transportMode = document.getElementById("transport-mode").value;
+        //         } else {
+        //             currentUser.transportMode = 'other';
+        //         }
+
         //         // only if it is a new location
         //         let latest_loc = currentUser.getLatestLocation();
         //         if(!latest_loc || (latest_loc.timestamp < pos.timestamp && latest_loc.lat != pos.coords.latitude && latest_loc.long != pos.coords.longitude)) {
@@ -611,7 +649,7 @@ async function startPostingLocations() {
         //             createMarkerSelf(pos.coords.latitude, pos.coords.longitude);
     
         //             const platform = navigator.platform.split(" ").join('');
-        //             await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform);
+        //             await putNewLocation(currentUser.webid, currentUser.storage, {lat: pos.coords.latitude, long: pos.coords.longitude, timestamp: pos.timestamp}, platform, currentUser.transportMode);
     
         //         }
         //     }, (err) => {

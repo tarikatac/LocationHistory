@@ -392,7 +392,7 @@ export async function getLatestLocation(storage) {
 
     const bindings_1 = await bindingsStream_1.toArray();
 
-    let tm = null;
+    let tm = 'other';
     if(bindings_1[0].get('tm')) {
         const val = bindings_1[0].get('tm').value.toLowerCase();
         if(val.includes("walking")) {
@@ -524,7 +524,7 @@ export async function getLocationsBetweenTimestamps(storage, t1, t2, excludes = 
 
             const bindings_1 = await bindingsStream_1.toArray();
 
-            let tm = null;
+            let tm = 'other';
             if(bindings_1[0].get('tm')) {
                 const val = bindings_1[0].get('tm').value.toLowerCase();
                 if(val.includes("walking")) {

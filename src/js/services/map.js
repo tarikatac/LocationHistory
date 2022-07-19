@@ -13,6 +13,8 @@ let markers = new Map();
 // webid => array of polylines
 let routes = new Map();
 
+let routeMarkers = new Map();
+
 const colors = {
     walking: '#4CAF50',
     bicycle: '#ff9800',
@@ -94,7 +96,8 @@ export function createRouteFromUser(user, t1, t2) {
     if(!user)
         return;
 
-    routes.set(user.webid, new Array());
+    // map of user.webid => (map of routes with key 't1 - t2')
+    routes.set(user.webid, new Map());
 
     //create polyline for each transport mode part
 
@@ -105,20 +108,25 @@ export function createRouteFromUser(user, t1, t2) {
     let startTimeSegment;
     for(let loc of user.locations) {
         if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
+            console.log(loc.transportMode);
             if(!startTimeSegment)
-                startTimeSegment = (new DateFormatter(Number(loc.timestamp))).getFormattedTime();
+                startTimeSegment = loc.timestamp;
 
             if(!prevTransportMode || prevTransportMode == loc.transportMode) {
                 latlngs.push([loc.lat, loc.long]);
             } else {
-                let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
-                let tooltip = `${user.name} | ${prevLoc.transportMode} | ${startTimeSegment} > ${(new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime()}`;
+                
+                // only create the polyline if it does not yet exist
+                if(!routes.has(`${startTimeSegment} - ${prevLoc.timestamp}`)) {
+                    let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
+                    let tooltip = `${user.name} | ${prevLoc.transportMode ? prevLoc.transportMode : 'other'} | ${ new Date(Number(startTimeSegment)).toLocaleString()} > ${new Date(Number(prevLoc.timestamp)).toLocaleString()}`;
+                    polyline.bindTooltip(tooltip).openTooltip();
 
-                polyline.bindTooltip(tooltip).openTooltip();
-                routes.get(user.webid).push(polyline.addTo(map));
+                    routes.get(user.webid).set(`${startTimeSegment} - ${prevLoc.timestamp}` ,polyline.addTo(map));
+                }
 
                 latlngs = [[prevLoc.lat, prevLoc.long]];
-                startTimeSegment = (new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime();
+                startTimeSegment = loc.timestamp;
 
                 latlngs.push([loc.lat, loc.long]);
             }
@@ -126,24 +134,62 @@ export function createRouteFromUser(user, t1, t2) {
             prevLoc = loc;          
         }
     }
-    let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
-    let tooltip = `${user.name} | ${prevLoc.transportMode} | ${startTimeSegment} > ${(new DateFormatter(Number(prevLoc.timestamp))).getFormattedTime()}`;
-    polyline.bindTooltip(tooltip).openTooltip();
-    routes.get(user.webid).push(polyline.addTo(map));
+
+    if(startTimeSegment) {
+        // only create the polyline if it does not yet exist
+        if(!routes.has(`${startTimeSegment} - ${prevLoc.timestamp}`)) {
+            let polyline = L.polyline(latlngs, {color: colors[prevTransportMode] ? colors[prevTransportMode] : '#2196F3'});
+            let tooltip = `${user.name} | ${prevLoc.transportMode ? prevLoc.transportMode : 'other'} | ${ new Date(Number(startTimeSegment)).toLocaleString()} > ${new Date(Number(prevLoc.timestamp)).toLocaleString()}`;
+            polyline.bindTooltip(tooltip).openTooltip();
+
+            routes.get(user.webid).set(`${startTimeSegment} - ${prevLoc.timestamp}` ,polyline.addTo(map));
+        }
+
+        // check if marker already exist
+        let tooltipMarker = `${user.name} | ${prevLoc.transportMode ? prevLoc.transportMode : 'other'} | Last seen at ${new Date(Number(prevLoc.timestamp)).toLocaleString()}`;
+        if(routeMarkers.get(user.webid)) {
+            // update marker
+            routeMarkers.get(user.webid).setLatLng([prevLoc.lat, prevLoc.long]);
+            routeMarkers.get(user.webid).setTooltipContent(tooltipMarker);
+        } else {
+            //create new marker
+            let m = L.marker([prevLoc.lat, prevLoc.long]);
+            m.bindTooltip(tooltipMarker).openTooltip();
+
+            routeMarkers.set(user.webid, m.addTo(map));
+        }
+
+        return prevLoc;
+    }
     
-    return latlngs.length > 0 ? latlngs[latlngs.length -1] : null;
+    return null;
 }
 
 export function removeRouteFromUser(user) {
     if(!user)
         return;
 
-    let rs = routes.get(user.webid);
-    if(rs) {
-        for(let polyline of rs) {
-            map.removeLayer(polyline);
+    for(let i in map._layers) {
+        if(map._layers[i]._path != undefined) {
+            try {
+                map.removeLayer(map._layers[i]);
+            }
+            catch(e) {
+                console.log("problem with " + e + map._layers[i]);
+            }
+        }
+    }
+
+    if(routes.has(user.webid)) {
+        for(let t in routes.get(user.webid)) {
+            map.removeLayer(routes.get(user.webid).get(t));
         }
         routes.delete(user.webid);
+    }
+
+    if(routeMarkers.get(user.webid)) {
+        map.removeLayer(routeMarkers.get(user.webid));
+        routeMarkers.delete(user.webid);
     }
 }
 
