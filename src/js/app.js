@@ -242,7 +242,7 @@ async function onUserMenuUpdateClick(event) {
     // set the checkbox to checked
     let li = document.getElementById("card_" + friendUsers[i].webid);
     let checkbox = li.querySelector('div>label>input');
-    checkbox.checkbox = true;
+    checkbox.checked = true;
     friendUsers[i].showLocation = true;
 
     // show the location/route of the user

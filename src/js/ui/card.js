@@ -19,7 +19,7 @@ export function addFriendsCard(user, onFriendsCardClick, onCheckboxChange, statu
         li.id = "card_" + user.webid;
         li.className = "collection-item avatar";
         li.innerHTML =`
-            <i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>
+            ${user.img ? `<img src="${user.img}" alt="" class="circle">` : '<i class="material-symbols-outlined circle" style="font-size: 40px;">account_circle</i>'}
             <span class="title">${user.name}</span>
             <p>${statusMessage[status]}</p>
             <div class="collection-checkbox hidden">

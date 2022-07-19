@@ -103,7 +103,6 @@ export function createRouteFromUser(user, t1, t2) {
     let startTimeSegment;
     for(let loc of user.locations) {
         if(t1.getTime() <= loc.timestamp && loc.timestamp <= t2.getTime()) {
-            console.log(loc.transportMode);
             if(!startTimeSegment)
                 startTimeSegment = loc.timestamp;
 
