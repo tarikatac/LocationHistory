@@ -246,7 +246,7 @@ async function onUserMenuUpdateClick(event) {
     friendUsers[i].showLocation = true;
 
     // show the location/route of the user
-    if(friendUsers[i].showLocation && friendUsers[i].isUsable()) {
+    if(friendUsers[i].showLocation && friendUsers[i].isUsable() && friendUsers[i].hasAccess) {
         try {
             removeMarkerFromUser(friendUsers[i]);
             removeRouteFromUser(friendUsers[i]);
