@@ -49,10 +49,11 @@ export function initMap() {
 
 export function createMarkerFromUser(loc, user) {
     if(loc && user) {
+        let tooltip = `${user.name} | ${loc.transportMode ? loc.transportMode : 'other'} | Last seen at ${new Date(Number(loc.timestamp)).toLocaleString()}`;
         // check if marker already exists
         if(markers.get(user.webid)) {
             markers.get(user.webid).setLatLng([loc.lat, loc.long]);
-            markers.get(user.webid).setTooltipContent(`${user.name} Last seen at ${new Date(Number(loc.timestamp)).toLocaleString()}`);
+            markers.get(user.webid).setTooltipContent(tooltip);
         } else {
             let friendMarker;
             if (!user.img) {//If the user doesn't have the foaf:img triple
@@ -63,7 +64,6 @@ export function createMarkerFromUser(loc, user) {
                 friendMarker = L.marker([loc.lat, loc.long], { icon: friend_image });
             }
 
-            let tooltip = `${user.name} Last seen at ${new Date(Number(loc.timestamp)).toLocaleString()}`;
             friendMarker.bindTooltip(tooltip).openTooltip();
 
             markers.set(user.webid, friendMarker.addTo(map));
@@ -148,7 +148,14 @@ export function createRouteFromUser(user, t1, t2) {
             routeMarkers.get(user.webid).setTooltipContent(tooltipMarker);
         } else {
             //create new marker
-            let m = L.marker([prevLoc.lat, prevLoc.long]);
+            let m;
+            if (!user.img) {//If the user doesn't have the foaf:img triple
+                m = L.marker([prevLoc.lat, prevLoc.long]);
+            }
+            else {
+                let friend_image = L.divIcon({className: 'dummy', html: `<div class="friend-marker"><img src="${user.img}"></img></div>`});
+                m = L.marker([prevLoc.lat, prevLoc.long], { icon: friend_image });
+            }
             m.bindTooltip(tooltipMarker).openTooltip();
 
             routeMarkers.set(user.webid, m.addTo(map));
