@@ -133,9 +133,27 @@ async function onCheckboxChange(event) {
     if(i >= 0) {
         if(event.currentTarget.checked) {
             friendUsers[i].showLocation = true;
-            let loc = friendUsers[i].getLatestLocation();
-            if(loc)
-                createMarkerFromUser(loc, friendUsers[i]);
+            try {
+                removeMarkerFromUser(friendUsers[i]);
+                removeRouteFromUser(friendUsers[i]);
+    
+                if(friendUsers[i].displayMode == 'route') {
+                    updateFriendsCard(friendUsers[i], 'loadingRoute');    
+                }
+        
+                let loc = await showUserLocation(i); 
+        
+                if(friendUsers[i].displayMode == 'route') {
+                    updateFriendsCard(friendUsers[i], 'loadingRouteDone');
+                }
+    
+                if(loc) {
+                    moveMap(loc, 10);
+                }
+            } catch(error) {
+                console.log(error);
+                updateFriendsCard(friendUsers[i], 'done');
+            } 
         } else {
             friendUsers[i].showLocation = false;
             removeMarkerFromUser(friendUsers[i]);
@@ -421,7 +439,7 @@ async function updateMap() {
     console.log(friendUsers);
 
     for(let i in friendUsers) {
-        if(friendUsers[i].isUsable() && friendUsers[i].hasAccess) {
+        if(friendUsers[i].isUsable() && friendUsers[i].hasAccess && friendUsers[i].showLocation) {
             await showUserLocation(i);            
         }
 
