@@ -57,6 +57,9 @@ export class User {
     }
 
     getLocations(t1, t2) {
+        if(!this.locations || this.locations.length <= 0)
+            return null;
+
         let locs = [];
         for(let l of this.locations) {
             if(t1 <= l.timestamp && l.timestamp <= t2) {
@@ -68,7 +71,12 @@ export class User {
 
     // adds the locations in order of timestamp
     addLocations(locs) {
-        this.locations = this.locations.concat(locs);
+        for(let l of locs) {
+            if(this.locations.find(el => el.timestamp == l.timestamp) == undefined) {
+                this.locations.push(l);
+            }
+        }
+
         this.locations.sort((a, b) => a.timestamp - b.timestamp);
     }
 

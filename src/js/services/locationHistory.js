@@ -9,6 +9,7 @@ const myEngine = new QueryEngine();
 const storage_path = 'public/YourLocationHistory/';
 const container_path = storage_path + 'Data/';
 const inbox_file = storage_path + 'inbox.ttl';
+const aggregates_path = storage_path + 'Aggregates/';
 
 async function myfetchFunction(url) {
     return await solidfetch(url, {
@@ -102,6 +103,8 @@ export async function givePublicAccesstotheInbox(user_storage) {
 
 export async function giveAccessoftheContainertoOwner(webid, storage) {
     const container = storage + container_path;
+    const aggContainer = storage + aggregates_path;
+
     let response_;
     try {
         response_ = await solidfetch(container + '.acl', {
@@ -131,6 +134,52 @@ export async function giveAccessoftheContainertoOwner(webid, storage) {
         try {
             // Send a PUT request to post to the source
             response = await solidfetch(container + '.acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'text/turtle' },
+                body: query,
+                credentials: 'include'
+            });
+        } catch (error) {
+            throw new Error("Could not give access of the container to owner");
+        }
+
+        if (response.status >= 400) {
+            throw new Error("Could not give access of the container to owner");
+        }
+    }
+
+
+
+    //aggregate container
+    response_;
+    try {
+        response_ = await solidfetch(aggContainer + '.acl', {
+            method: 'GET',
+            headers: { 'Content-Type': 'text/turtle' },
+        });
+    } catch (error) {
+        throw new Error("Could not give access of the container to owner");
+    }
+
+
+    if (response_.status > 300) {
+        const query = `@prefix : <#>.
+        @prefix acl: <http://www.w3.org/ns/auth/acl#>.
+        @prefix foaf: <http://xmlns.com/foaf/0.1/>.
+        @prefix D: <./>.
+        
+
+        :ReadControlWrite
+        a acl:Authorization;
+        acl:accessTo D:;
+        acl:agent <${webid}>;
+        acl:default D:;
+        acl:mode acl:Control, acl:Read, acl:Write.`
+
+        let response;
+        try {
+            // Send a PUT request to post to the source
+            response = await solidfetch(aggContainer + '.acl', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'text/turtle' },
                 body: query,
@@ -246,27 +295,53 @@ async function approvedSentNotification(storage, friend_webid) {
 
 async function addRequestingPersontoACL(storage, friend_webid) {
     const container = storage + container_path;
+    const aggContainer = storage + aggregates_path;
 
-    const query_extra = `:Read
+    const query_extra = `
+        :Read
         a acl:Authorization;
         acl:accessTo D:;
         acl:agent <${friend_webid}>;
         acl:default D:;
-        acl:mode acl:Read.`;
+        acl:mode acl:Read.
+        `;
     // Send a GET and PUT request to update the source
-    const response = await solidfetch(container + '.acl', {
+    const r1 = await solidfetch(container + '.acl', {
         method: 'GET',
         headers: { 'Content-Type': 'text/turtle' },
-    }).then(response_ => response_.text()).then(async (data) => {
-        if (!data.includes(query_extra)) {
-            const query = data + "\n" + query_extra;
-            const response_put = await solidfetch(container + '.acl', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'text/turtle' },
-                body: query
-            });
-        }
     });
+    
+    const data = await r1.text();
+
+    if (!data.includes(query_extra)) {
+        const query = data + "\n" + query_extra;
+        const response_put = await solidfetch(container + '.acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query
+        });
+    }
+
+
+
+    //agg permisions
+    const r2 = await solidfetch(aggContainer + '.acl', {
+        method: 'GET',
+        headers: { 'Content-Type': 'text/turtle' },
+    });
+    
+    const data2 = await r2.text();
+
+    if (!data2.includes(query_extra)) {
+        const query = data2 + "\n" + query_extra;
+        const response_put = await solidfetch(aggContainer + '.acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query
+        });
+    }
+
+    console.log("done acl");
 }
 
 async function sendRequestAcceptedNotification(webid, storage, friend_storage) {
@@ -292,27 +367,50 @@ export async function revokeAccess(webid, storage, friend_webid, friend_storage)
 
 async function revokingPersonAccessfromACL(storage, friend_webid) {
     const container = storage + container_path;
+    const aggContainer = storage + aggregates_path;
 
-    const query_extra = `:Read
+    const query_extra = `
+        :Read
         a acl:Authorization;
         acl:accessTo D:;
         acl:agent <${friend_webid}>;
         acl:default D:;
-        acl:mode acl:Read.`;
+        acl:mode acl:Read.
+        `;
     // Send a GET and PUT request to update the source
-    const response = await solidfetch(container + '.acl', {
+    const r1 = await solidfetch(container + '.acl', {
         method: 'GET',
         headers: { 'Content-Type': 'text/turtle' },
-    }).then(response_ => response_.text()).then(async (data) => {
-        if (data.includes(query_extra)) {
-            const query = data.split(query_extra).join('\n');
-            const response_put = await solidfetch(container + '.acl', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'text/turtle' },
-                body: query
-            });
-        }
     });
+
+    const data = await r1.text();
+
+    if (data.includes(query_extra)) {
+        const query = data.split(query_extra).join('\n');
+        const response_put = await solidfetch(container + '.acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query
+        });
+    }
+
+
+    //aggregates
+    const r2 = await solidfetch(aggContainer + '.acl', {
+        method: 'GET',
+        headers: { 'Content-Type': 'text/turtle' },
+    });
+
+    const data2 = await r2.text();
+
+    if (data2.includes(query_extra)) {
+        const query = data2.split(query_extra).join('\n');
+        const response_put = await solidfetch(aggContainer + '.acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query
+        });
+    }
 }
 
 async function deleteRequestAcceptedNotification(webid, storage, friend_storage) {
@@ -493,6 +591,212 @@ export async function putNewLocation(webid, storage, loc, platform, transportMod
             body: query,
             credentials: 'include'
         });
+}
+
+async function checkAggregateLocationDay(storage, day) {
+    if(!storage || !day)
+        return false;
+
+    const file = storage + aggregates_path + day;
+
+    let response_;
+    try {
+        // Send a GET request to check if inbox exists
+        response_ = await solidfetch(file, {
+            method: 'GET',
+            headers: { 'Content-Type': 'text/turtle' },
+            credentials: 'include'
+        });
+    } catch (error) {
+        throw new Error("Could not access " + day);
+    }
+
+    return (200 <= response_.status && response_.status < 300);
+}
+
+// stores the location entry in an aggregation per day
+export async function putNewLocationToAggregate(webid, storage, loc, platform, transportMode) {
+    const container = storage + aggregates_path;
+    let t = new Date(Number(loc.timestamp));
+    t.setHours(0,0,0,0);
+    const day = t.getTime();
+
+
+    let transportModeString;
+    switch (transportMode) {
+        case 'walking':
+            transportModeString = 'tm:transportMode tm:Walking.';
+            break;
+        case 'bicycle':
+            transportModeString = 'tm:transportMode tm:Bicycling.';
+            break;
+        case 'car':
+            transportModeString = 'tm:transportMode tm:CarDriving.';
+            break;
+        default:
+            break;
+    }
+
+    const queryInner = `
+        <${platform}> a sosa:Platform;
+        sosa:hosts <locationSensor>.
+
+        <locationSensor> a sosa:Sensor;
+        sosa:madeObservation <locationObservation_${loc.timestamp}>;
+        sosa:observes <location>;
+        sosa:isHostedBy <${platform}>.
+
+        <locationObservation_${loc.timestamp}> a sosa:Observation;
+        sosa:observedProperty <location> ;
+        sosa:hasResult <locationObservation_${loc.timestamp}_result>;
+        sosa:featureOfInterest <${webid}> ;
+        sosa:hasSimpleResult "POINT(${loc.long} ${loc.lat})"^^geo:wktLiteral ;
+        sosa:madeBySensor <locationSensor>;
+        sosa:resultTime "${new Date(Number(loc.timestamp)).toISOString()}"^^xsd:dateTime.
+
+        <locationObservation_${loc.timestamp}_result> a sosa:Result;
+        wgs84:long ${loc.long};
+        wgs84:lat ${loc.lat} ${transportModeString ? ";" : "."}
+        ${transportModeString ? transportModeString : ""}
+
+        <location> a sosa:ObservableProperty;
+        rdfs:label "Location"@en .
+
+        <${webid}> a sosa:FeatureOfInterest.
+    `;
+
+    // PUT for new file, patch if file already exists
+    let response;
+    if(await checkAggregateLocationDay(storage, day)) {
+        const query = `
+        PREFIX sosa: <http://www.w3.org/ns/sosa/>
+        PREFIX wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        PREFIX plh: <https://w3id.org/personallocationhistory#>
+        PREFIX tm: <https://w3id.org/transportmode#>
+        PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        INSERT DATA {
+            ${queryInner}
+        }
+        `;
+
+        response = await solidfetch(container + `${day}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/sparql-update' },
+            body: query,
+            credentials: 'include'
+        });
+    } else {
+        const query = `
+        @prefix sosa: <http://www.w3.org/ns/sosa/>.
+        @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
+        @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+        @prefix plh: <https://w3id.org/personallocationhistory#> .
+        @prefix tm: <https://w3id.org/transportmode#> .
+        @prefix geo: <http://www.opengis.net/ont/geosparql#>.
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+        ${queryInner}
+        `;
+
+        response = await solidfetch(container + `${day}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/turtle' },
+            body: query,
+            credentials: 'include'
+        });
+    }
+    
+    
+
+    console.log(response);
+}
+
+export async function getAggregateLocationsBetweenTimestamps(storage, t1, t2) {
+    console.log("getAggregateLocationsBetweenTimestamps");
+
+    const container = storage + aggregates_path;
+
+    let t = new Date(Number(t1));
+    t.setHours(0,0,0,0);
+    const startT1 = t.getTime();
+
+    let bindingsStream;
+
+    bindingsStream = await myEngine.queryBindings(`
+        SELECT ?timestamp
+        WHERE {
+            ?s <http://www.w3.org/ns/ldp#contains> ?name .
+            BIND (STRAFTER(STR(?name), "${container}") AS ?timestamp)
+            FILTER (?timestamp >= "${startT1}" && ?timestamp <= "${t2}")
+        }
+        ORDER BY ASC(?timestamp)`, {
+        sources: [`${container}`],
+        fetch: myfetchFunction,
+        httpIncludeCredentials: true
+    });
+    myEngine.invalidateHttpCache();
+
+    const bindings = await bindingsStream.toArray();
+
+    console.log(bindings.length);
+   
+    // no location data
+    if(!bindings || ! bindings[0])
+        return null;
+
+    let locations = [];
+    for(let binding of bindings) {
+        const day = binding.get('timestamp').value;
+
+        const bindingsStream_1 = await myEngine.queryBindings(`
+            SELECT ?lat ?long ?tm ?timestamp
+            WHERE {
+                ?s a <http://www.w3.org/ns/sosa/Result>;
+                <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+                <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+                OPTIONAL { ?s <https://w3id.org/transportmode#transportMode> ?tm. }
+    
+                BIND(STRBEFORE(STRAFTER(STR(?s), "${container}locationObservation_"), "_result") as ?timestamp)
+    
+                FILTER (?timestamp >= "${t1}" && ?timestamp <= "${t2}")
+            }
+            ORDER BY ASC(?timestamp)`, {
+            sources: [`${container}${day}`],
+            fetch: myfetchFunction,
+            httpIncludeCredentials: true
+        });
+
+        const bindings_1 = await bindingsStream_1.toArray();
+
+        // no location data
+        if(!bindings_1 || ! bindings_1[0])
+            return null;
+
+        for(let binding_1 of bindings_1) {
+            let tm = 'other';
+            if(binding_1.get('tm')) {
+                const val = binding_1.get('tm').value.toLowerCase();
+                if(val.includes("walking")) {
+                    tm = "walking";
+                } else if(val.includes("bicycling")) {
+                    tm = "bicycle"
+                } else if(val.includes("car")) {
+                    tm = "car";
+                }
+            }
+
+            locations.push({
+                lat: binding_1.get('lat').value,
+                long: binding_1.get('long').value,
+                timestamp: binding_1.get('timestamp').value,
+                transportMode: tm
+            });
+        }
+    }
+    
+    console.log(locations);
+    return locations;
 }
 
 // retrieves all the locations between t1 and t2. without retrieving the locations that are present in exclude. exclude is an array of timestamps
