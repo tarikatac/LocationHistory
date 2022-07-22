@@ -799,6 +799,179 @@ export async function getAggregateLocationsBetweenTimestamps(storage, t1, t2) {
     return locations;
 }
 
+export async function createAggregateLocationsBetweenTimestamps(webid, storage, t1, t2) {
+    // frist get all the locations in Data
+    const container = storage + container_path;
+    const aggContainer = storage + aggregates_path;
+    let bindingsStream;
+
+    bindingsStream = await myEngine.queryBindings(`
+        SELECT ?timestamp
+        WHERE {
+            ?s <http://www.w3.org/ns/ldp#contains> ?name .
+            BIND (STRAFTER(STR(?name), "/YourLocationHistory/Data/") AS ?timestamp)
+            FILTER (?timestamp >= "${t1}" && ?timestamp <= "${t2}")
+        }
+        ORDER BY ASC(?timestamp)`, {
+        sources: [`${container}`],
+        fetch: myfetchFunction,
+        httpIncludeCredentials: true
+    });
+    myEngine.invalidateHttpCache();
+
+    
+    const bindings = await bindingsStream.toArray();
+
+
+    // no location data
+    if(!bindings || ! bindings[0])
+        return null;
+
+
+    // some locations might be already in the aggregation. These can be excluded and dont need to be requested
+    let excludes = [];
+    let toBeExcluded = await getAggregateLocationsBetweenTimestamps(storage, t1, t2);
+    excludes = toBeExcluded.map(x => x.timestamp);
+    console.log("agg excluded:", excludes.length);
+
+    let i = 0;
+
+    // map timestamp_day => [locs]
+    let locations = new Map();
+    for(let binding of bindings) {
+        const timestamp = binding.get('timestamp').value;
+
+        let t = new Date(Number(timestamp));
+        t.setHours(0,0,0,0);
+        const day = t.getTime();
+
+        if(!locations.has(day))
+            locations.set(day, new Array());
+
+        console.log("agg", `${++i}/${bindings.length}`, timestamp);
+
+        if(!excludes.includes(timestamp)) {
+            const bindingsStream_1 = await myEngine.queryBindings(`
+                SELECT ?platform ?lat ?long ?tm WHERE {
+                    ?platform a <http://www.w3.org/ns/sosa/Platform>.
+                    ?s <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat ;
+                    <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.
+                    OPTIONAL { ?s <https://w3id.org/transportmode#transportMode> ?tm. }
+                }`, {
+                sources: [`${container}${timestamp}`],
+                fetch: myfetchFunction,
+                httpIncludeCredentials: true
+            });
+
+            const bindings_1 = await bindingsStream_1.toArray();
+
+
+            locations.get(day).push({
+                platform: bindings_1[0].get('platform') ?  bindings_1[0].get('platform').value : null,
+                lat: bindings_1[0].get('lat').value,
+                long: bindings_1[0].get('long').value,
+                timestamp: timestamp,
+                transportMode: (bindings_1[0].get('tm') ? bindings_1[0].get('tm').value : null)
+            });
+        }
+    }
+
+    for(let [day, locs] of locations) {
+
+        let platform = locs[0].platform;
+        //create the query
+        let queryInner = `
+        <${platform}> a sosa:Platform;
+        sosa:hosts <locationSensor>.
+
+        <locationSensor> a sosa:Sensor;`;
+
+        if(locs.length > 0) {
+            queryInner += `
+            sosa:madeObservation <locationObservation_${locs[0].timestamp}>`;
+        }
+        
+        for(let j = 1; j < locs.length; j++) {
+            queryInner += `, <locationObservation_${locs[j].timestamp}>`;
+        }
+
+        queryInner += `;`;
+        
+        queryInner +=`
+        sosa:observes <location>;
+        sosa:isHostedBy <${platform}>.
+        `;
+        
+        for(let loc of locs) {
+            queryInner += `
+            <locationObservation_${loc.timestamp}> a sosa:Observation;
+            sosa:observedProperty <location> ;
+            sosa:hasResult <locationObservation_${loc.timestamp}_result>;
+            sosa:featureOfInterest <${webid}> ;
+            sosa:hasSimpleResult "POINT(${loc.long} ${loc.lat})"^^geo:wktLiteral ;
+            sosa:madeBySensor <locationSensor>;
+            sosa:resultTime "${new Date(Number(loc.timestamp)).toISOString()}"^^xsd:dateTime.
+
+            <locationObservation_${loc.timestamp}_result> a sosa:Result;
+            wgs84:long ${loc.long};
+            wgs84:lat ${loc.lat} ${loc.transportMode ? ";" : "."}
+            ${loc.transportMode ? `<https://w3id.org/transportmode#transportMode> <${loc.transportMode}>.` : ""}
+            `;
+        }
+        
+
+        queryInner +=`
+        <location> a sosa:ObservableProperty;
+        rdfs:label "Location"@en .
+
+        <${webid}> a sosa:FeatureOfInterest.
+        `;
+
+        let response;
+        // if not yet exist put a new one else patch it
+        if(await checkAggregateLocationDay(storage, day)) {
+            const query = `
+            PREFIX sosa: <http://www.w3.org/ns/sosa/>
+            PREFIX wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            PREFIX plh: <https://w3id.org/personallocationhistory#>
+            PREFIX tm: <https://w3id.org/transportmode#>
+            PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            INSERT DATA {
+                ${queryInner}
+            }
+            `;
+    
+            response = await solidfetch(aggContainer + `${day}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/sparql-update' },
+                body: query,
+                credentials: 'include'
+            });
+        } else {
+            const query = `
+            @prefix sosa: <http://www.w3.org/ns/sosa/>.
+            @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>.
+            @prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+            @prefix plh: <https://w3id.org/personallocationhistory#> .
+            @prefix tm: <https://w3id.org/transportmode#> .
+            @prefix geo: <http://www.opengis.net/ont/geosparql#>.
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+            ${queryInner}
+            `;
+    
+            response = await solidfetch(aggContainer + `${day}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'text/turtle' },
+                body: query,
+                credentials: 'include'
+            });
+        }
+        console.log(response);
+    }
+}
+
 // retrieves all the locations between t1 and t2. without retrieving the locations that are present in exclude. exclude is an array of timestamps
 export async function getLocationsBetweenTimestamps(storage, t1, t2, excludes = []) {
     console.log("getLocationsBetweenTimestamps");

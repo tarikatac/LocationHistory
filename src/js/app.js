@@ -25,7 +25,8 @@ import {
     getLocationsBetweenTimestamps,
     checkInbox,
     putNewLocationToAggregate,
-    getAggregateLocationsBetweenTimestamps
+    getAggregateLocationsBetweenTimestamps,
+    createAggregateLocationsBetweenTimestamps
 } from "./services/locationHistory";
 
 // ui elements imports
@@ -412,6 +413,12 @@ async function handleRedirect() {
     } finally {
         hideLoginLoadingScreen();
     }
+
+    //Try to create aggregates from 24h ago
+    let now = new Date();
+    let past = new Date();
+    past.setHours(past.getHours() - 24);
+    // createAggregateLocationsBetweenTimestamps(currentUser.webid, currentUser.storage, past.getTime(), now.getTime());
 
     //successful login, start checking for notifications and friends periodically
     mainLoop();
