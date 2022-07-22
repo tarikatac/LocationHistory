@@ -831,7 +831,8 @@ export async function createAggregateLocationsBetweenTimestamps(webid, storage, 
     // some locations might be already in the aggregation. These can be excluded and dont need to be requested
     let excludes = [];
     let toBeExcluded = await getAggregateLocationsBetweenTimestamps(storage, t1, t2);
-    excludes = toBeExcluded.map(x => x.timestamp);
+    if(toBeExcluded && toBeExcluded.length > 0)
+        excludes = toBeExcluded.map(x => x.timestamp);
     console.log("agg excluded:", excludes.length);
 
     let i = 0;
@@ -877,6 +878,8 @@ export async function createAggregateLocationsBetweenTimestamps(webid, storage, 
     }
 
     for(let [day, locs] of locations) {
+        if(!locs || locs.length <= 0)
+            continue;
 
         let platform = locs[0].platform;
         //create the query

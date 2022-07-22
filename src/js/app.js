@@ -420,7 +420,7 @@ async function handleRedirect() {
     let now = new Date();
     let past = new Date();
     past.setHours(past.getHours() - 24);
-    // createAggregateLocationsBetweenTimestamps(currentUser.webid, currentUser.storage, past.getTime(), now.getTime());
+    createAggregateLocationsBetweenTimestamps(currentUser.webid, currentUser.storage, past.getTime(), now.getTime());
 
     //successful login, start checking for notifications and friends periodically
     mainLoop();
@@ -654,6 +654,9 @@ async function startPostingLocations() {
             timeout: Infinity,
             maximumAge: 0
         });
+
+
+        // This piece of code was used to be able to use a GPS Mocking application
 
         // clearInterval(locator);
         // locator = setInterval(() => {
