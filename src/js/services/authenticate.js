@@ -7,6 +7,14 @@ import {
 
 import { User } from "../models/user";
 
+export function initLogin() {
+    console.log("initLogin");
+    getDefaultSession().onError((error, errorDescription) => {
+        console.log(error);
+        console.log(errorDescription);
+    });
+}
+
 export async function logoutUser() {
     try {
         await logout();

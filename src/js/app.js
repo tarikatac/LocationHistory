@@ -9,7 +9,7 @@ import { DateFormatter } from "./models/dateFormatter";
 
 // services import
 import { createUserFromWebID, getIssuerFromWebID, getStorageFromWebID, getUserDataFromWebID } from "./services/webid";
-import { loginUser, handleRedirectAfterLogin, isLoggedIn, logoutUser } from "./services/authenticate";
+import { loginUser, handleRedirectAfterLogin, isLoggedIn, logoutUser, initLogin } from "./services/authenticate";
 import { initMap, createMarkerFromUser, removeMarkerFromUser, moveMap, removeRouteFromUser, createRouteFromUser, removeMarkerSelf, createMarkerSelf } from "./services/map";
 import { 
     createInbox,
@@ -46,6 +46,8 @@ let currentUser;
 let friendUsers = [];
 
 async function init() {
+    initLogin();
+
     addEventListeners();
 
     // checks if the user is logged in and starts the mainloop
@@ -505,9 +507,12 @@ async function showUserLocation(i) {
                 if(friendUsers[i].displayTimeTo.getTime() >= todayStart || !locs || locs.length == 0) {
 
                     let timeFrom = friendUsers[i].displayTimeFrom.getTime();
+
+                    // TODO: implement a way to reduce the amount of requests done
                     // if there are locations, only request the new locations that are in the future
-                    if(locs && locs.length > 0)
-                        timeFrom = todayStart;
+                    // if(locs && locs.length > 0)
+                    //     timeFrom = todayStart;
+
 
                     locs = await getAggregateLocationsBetweenTimestamps(friendUsers[i].storage, timeFrom, friendUsers[i].displayTimeTo.getTime());
                 }
